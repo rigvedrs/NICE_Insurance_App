@@ -1442,15 +1442,26 @@ def api_top_customers():
 @login_required
 def api_monthly_revenue():
     data = execute_query(
-        """SELECT month, SUM(amount) as total FROM (
-           (SELECT DATE_FORMAT(HPAYMENT_DT, '%%Y-%%m') as month, HPAYMENT_AMT as amount FROM RAH_HOME_PAYMENT)
-           UNION ALL
-           (SELECT DATE_FORMAT(APAYMENT_DT, '%%Y-%%m') as month, APAYMENT_AMT as amount FROM RAH_AUTO_PAYMENT)
-           ) combined GROUP BY month ORDER BY month""",
+        """SELECT
+               month_key,
+               DATE_FORMAT(STR_TO_DATE(CONCAT(month_key, '-01'), '%Y-%m-%d'), '%b %Y') AS label,
+               total
+           FROM (
+               SELECT month_key, SUM(amount) AS total FROM (
+                   SELECT DATE_FORMAT(HPAYMENT_DT, '%Y-%m') AS month_key, HPAYMENT_AMT AS amount
+                   FROM RAH_HOME_PAYMENT WHERE HPAYMENT_DT IS NOT NULL
+                   UNION ALL
+                   SELECT DATE_FORMAT(APAYMENT_DT, '%Y-%m') AS month_key, APAYMENT_AMT AS amount
+                   FROM RAH_AUTO_PAYMENT WHERE APAYMENT_DT IS NOT NULL
+               ) combined
+               WHERE month_key IS NOT NULL
+               GROUP BY month_key
+           ) grouped
+           ORDER BY month_key""",
         fetchall=True
     )
     return jsonify({
-        'labels': [datetime.strptime(r['month'], '%Y-%m').strftime('%b %Y') for r in data],
+        'labels': [r['label'] for r in data],
         'data': [float(r['total']) for r in data]
     })
 
