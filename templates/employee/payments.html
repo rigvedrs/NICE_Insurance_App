@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}All Payments - NICE Insurance{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2><i class="bi bi-credit-card me-2"></i>All Payments</h2>
+    <span class="badge bg-primary fs-6">{{ payments|length }} total</span>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr><th>Type</th><th>Payment #</th><th>Customer</th><th>Date</th><th>Amount</th><th>Method</th><th>Invoice #</th></tr>
+                </thead>
+                <tbody>
+                    {% for p in payments %}
+                    <tr>
+                        <td><span class="badge {% if p.type == 'Home' %}badge-home{% else %}badge-auto{% endif %}">{{ p.type }}</span></td>
+                        <td><strong>#{{ p.id }}</strong></td>
+                        <td>{{ p.FIRST_NAME }} {{ p.LAST_NAME }}</td>
+                        <td>{{ p.pay_date }}</td>
+                        <td><strong>${{ "%.2f"|format(p.amount) }}</strong></td>
+                        <td>
+                            <i class="bi {% if p.method == 'Credit' %}bi-credit-card{% elif p.method == 'Debit' %}bi-credit-card-2-front{% elif p.method == 'PayPal' %}bi-paypal{% else %}bi-check2-square{% endif %} me-1"></i>{{ p.method }}
+                        </td>
+                        <td>#{{ p.invoice_id }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="7" class="text-center text-muted py-3">No payments found</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

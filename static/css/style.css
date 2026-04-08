@@ -1,0 +1,364 @@
+/* ============================================================
+   NICE Insurance - Custom Styles
+   Professional blue/teal color scheme
+   ============================================================ */
+
+:root {
+    --nice-primary: #0c6e7a;
+    --nice-primary-dark: #094f59;
+    --nice-primary-light: #e0f4f7;
+    --nice-accent: #1a9baa;
+    --nice-bg: #f4f7fa;
+    --nice-card-bg: #ffffff;
+    --nice-text: #2c3e50;
+    --nice-text-muted: #6c757d;
+    --nice-success: #27ae60;
+    --nice-warning: #f39c12;
+    --nice-danger: #e74c3c;
+    --nice-border: #dee2e6;
+}
+
+body {
+    background-color: var(--nice-bg);
+    color: var(--nice-text);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+main {
+    flex: 1;
+}
+
+/* ---- Navbar ---- */
+.navbar.bg-primary {
+    background: linear-gradient(135deg, var(--nice-primary) 0%, var(--nice-primary-dark) 100%) !important;
+}
+
+.navbar-brand {
+    font-size: 1.25rem;
+    letter-spacing: 0.02em;
+}
+
+/* ---- Cards ---- */
+.card {
+    border: none;
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    transition: box-shadow 0.2s ease;
+}
+
+.card:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+.card-header {
+    border-radius: 10px 10px 0 0 !important;
+    font-weight: 600;
+}
+
+/* ---- Stat Cards ---- */
+.stat-card {
+    border-left: 4px solid var(--nice-primary);
+    padding: 1.25rem;
+}
+
+.stat-card .stat-value {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: var(--nice-primary);
+    line-height: 1.2;
+}
+
+.stat-card .stat-label {
+    font-size: 0.85rem;
+    color: var(--nice-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 0.25rem;
+}
+
+.stat-card .stat-icon {
+    font-size: 2.5rem;
+    color: var(--nice-primary-light);
+    opacity: 0.6;
+}
+
+.stat-card.success { border-left-color: var(--nice-success); }
+.stat-card.success .stat-value { color: var(--nice-success); }
+.stat-card.warning { border-left-color: var(--nice-warning); }
+.stat-card.warning .stat-value { color: var(--nice-warning); }
+.stat-card.danger { border-left-color: var(--nice-danger); }
+.stat-card.danger .stat-value { color: var(--nice-danger); }
+.stat-card.accent { border-left-color: var(--nice-accent); }
+.stat-card.accent .stat-value { color: var(--nice-accent); }
+
+/* ---- Tables ---- */
+.table {
+    font-size: 0.9rem;
+}
+
+.table thead th {
+    background-color: var(--nice-primary);
+    color: white;
+    border: none;
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.75rem;
+    white-space: nowrap;
+}
+
+.table tbody tr:hover {
+    background-color: var(--nice-primary-light);
+}
+
+.table td {
+    vertical-align: middle;
+    padding: 0.6rem 0.75rem;
+}
+
+/* ---- Badges ---- */
+.badge-active {
+    background-color: var(--nice-success);
+    color: white;
+}
+
+.badge-expired {
+    background-color: var(--nice-text-muted);
+    color: white;
+}
+
+.badge-home {
+    background-color: #3498db;
+    color: white;
+}
+
+.badge-auto {
+    background-color: #9b59b6;
+    color: white;
+}
+
+/* ---- Buttons ---- */
+.btn-primary {
+    background-color: var(--nice-primary);
+    border-color: var(--nice-primary);
+}
+
+.btn-primary:hover {
+    background-color: var(--nice-primary-dark);
+    border-color: var(--nice-primary-dark);
+}
+
+.btn-outline-primary {
+    color: var(--nice-primary);
+    border-color: var(--nice-primary);
+}
+
+.btn-outline-primary:hover {
+    background-color: var(--nice-primary);
+    border-color: var(--nice-primary);
+}
+
+/* ---- Forms ---- */
+.form-control:focus, .form-select:focus {
+    border-color: var(--nice-accent);
+    box-shadow: 0 0 0 0.2rem rgba(26, 155, 170, 0.15);
+}
+
+/* ---- Login / Register ---- */
+.auth-container {
+    max-width: 480px;
+    margin: 2rem auto;
+}
+
+.auth-card {
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.auth-card .card-header {
+    background: linear-gradient(135deg, var(--nice-primary) 0%, var(--nice-accent) 100%);
+    color: white;
+    text-align: center;
+    padding: 2rem 1rem 1.5rem;
+}
+
+.auth-card .card-header h3 {
+    margin: 0;
+    font-weight: 700;
+}
+
+.auth-card .card-header p {
+    margin: 0.5rem 0 0;
+    opacity: 0.85;
+    font-size: 0.9rem;
+}
+
+/* ---- Charts ---- */
+.chart-container {
+    position: relative;
+    padding: 1rem;
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+
+.chart-container canvas {
+    max-height: 320px;
+}
+
+.chart-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--nice-text);
+    margin-bottom: 0.75rem;
+}
+
+/* ---- Page Headers ---- */
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 2px solid var(--nice-primary-light);
+}
+
+.page-header h2 {
+    margin: 0;
+    font-weight: 700;
+    color: var(--nice-primary-dark);
+}
+
+/* ---- Modal ---- */
+.modal-header {
+    background: linear-gradient(135deg, var(--nice-primary) 0%, var(--nice-accent) 100%);
+    color: white;
+}
+
+.modal-header .btn-close {
+    filter: brightness(0) invert(1);
+}
+
+/* ---- Quick Actions ---- */
+.quick-action {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    text-decoration: none;
+    color: var(--nice-text);
+    transition: all 0.2s ease;
+    border: 1px solid var(--nice-border);
+}
+
+.quick-action:hover {
+    background-color: var(--nice-primary-light);
+    border-color: var(--nice-primary);
+    color: var(--nice-primary);
+    transform: translateY(-1px);
+}
+
+.quick-action i {
+    font-size: 1.5rem;
+    color: var(--nice-primary);
+}
+
+/* ---- Password Strength ---- */
+.password-strength {
+    height: 4px;
+    border-radius: 2px;
+    margin-top: 4px;
+    transition: all 0.3s ease;
+}
+
+.password-strength.weak { background: var(--nice-danger); width: 25%; }
+.password-strength.fair { background: var(--nice-warning); width: 50%; }
+.password-strength.good { background: #2ecc71; width: 75%; }
+.password-strength.strong { background: var(--nice-success); width: 100%; }
+
+/* ---- Index Analysis ---- */
+.index-card {
+    border-left: 4px solid var(--nice-accent);
+}
+
+.explain-table {
+    font-size: 0.8rem;
+}
+
+.explain-table th {
+    font-size: 0.75rem;
+}
+
+/* ---- Activity Feed ---- */
+.activity-item {
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--nice-border);
+    font-size: 0.88rem;
+}
+
+.activity-item:last-child {
+    border-bottom: none;
+}
+
+.activity-badge {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 0.5rem;
+}
+
+.activity-badge.insert { background-color: var(--nice-success); }
+.activity-badge.update { background-color: var(--nice-warning); }
+.activity-badge.delete { background-color: var(--nice-danger); }
+
+/* ---- Responsive ---- */
+@media (max-width: 768px) {
+    .stat-card .stat-value {
+        font-size: 1.4rem;
+    }
+    .page-header {
+        flex-direction: column;
+        gap: 0.75rem;
+        align-items: flex-start;
+    }
+    .chart-container canvas {
+        max-height: 250px;
+    }
+}
+
+/* ---- Pagination ---- */
+.pagination .page-link {
+    color: var(--nice-primary);
+}
+
+.pagination .page-item.active .page-link {
+    background-color: var(--nice-primary);
+    border-color: var(--nice-primary);
+}
+
+/* ---- Scrollable table wrapper ---- */
+.table-responsive {
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* ---- Status indicators ---- */
+.status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 6px;
+}
+
+.status-dot.active { background-color: var(--nice-success); }
+.status-dot.expired { background-color: var(--nice-text-muted); }
+.status-dot.leased { background-color: #3498db; }
+.status-dot.financed { background-color: var(--nice-warning); }
+.status-dot.owned { background-color: var(--nice-success); }

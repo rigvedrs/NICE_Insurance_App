@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}Login - NICE Insurance{% endblock %}
+
+{% block content %}
+<div class="auth-container">
+    <div class="card auth-card shadow">
+        <div class="card-header">
+            <svg class="mb-2" width="48" height="48" viewBox="0 0 32 32" fill="none">
+                <rect width="32" height="32" rx="6" fill="white" fill-opacity="0.2"/>
+                <path d="M8 22V10l8-4 8 4v12l-8 4-8-4z" stroke="white" stroke-width="1.5" fill="none"/>
+                <path d="M16 6v20M8 10l8 4 8-4" stroke="white" stroke-width="1.5" fill="none"/>
+            </svg>
+            <h3>Welcome Back</h3>
+            <p>Sign in to your NICE Insurance account</p>
+        </div>
+        <div class="card-body p-4">
+            <!-- Login Form -->
+            <div id="loginForm" {% if show_reset %}style="display:none"{% endif %}>
+                <form method="POST" action="{{ url_for('login') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="mb-3">
+                        <label class="form-label"><i class="bi bi-person me-1"></i>Username</label>
+                        <input type="text" name="username" class="form-control form-control-lg" placeholder="Enter username" required autofocus>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label"><i class="bi bi-lock me-1"></i>Password</label>
+                        <div class="input-group">
+                            <input type="password" name="password" id="loginPassword" class="form-control form-control-lg" placeholder="Enter password" required>
+                            <button class="btn btn-outline-secondary" type="button" onclick="togglePassword('loginPassword', this)">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-lg w-100 mb-3">
+                        <i class="bi bi-box-arrow-in-right me-1"></i>Sign In
+                    </button>
+                </form>
+                <div class="text-center">
+                    <a href="#" onclick="showReset()" class="text-decoration-none small">Forgot Password?</a>
+                    <hr>
+                    <p class="mb-0 small">Don't have an account? <a href="{{ url_for('register') }}" class="text-decoration-none fw-bold">Register here</a></p>
+                </div>
+            </div>
+
+            <!-- Reset Password Form -->
+            <div id="resetForm" {% if not show_reset %}style="display:none"{% endif %}>
+                <h5 class="mb-3"><i class="bi bi-key me-1"></i>Reset Password</h5>
+                <form method="POST" action="{{ url_for('reset_password') }}" id="resetFormEl">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="mb-3">
+                        <label class="form-label">Username</label>
+                        <div class="input-group">
+                            <input type="text" name="username" id="resetUsername" class="form-control" placeholder="Enter your username" required>
+                            <button class="btn btn-outline-primary" type="button" onclick="fetchSecurityQuestion()">
+                                <i class="bi bi-search"></i> Lookup
+                            </button>
+                        </div>
+                    </div>
+                    <div id="securityQuestionDiv" class="mb-3" style="display:none">
+                        <label class="form-label">Security Question</label>
+                        <p id="securityQuestionText" class="fw-bold text-primary mb-2"></p>
+                        <input type="text" name="security_answer" class="form-control" placeholder="Your answer" required>
+                    </div>
+                    <div id="newPasswordDiv" class="mb-3" style="display:none">
+                        <label class="form-label">New Password</label>
+                        <input type="password" name="new_password" class="form-control" placeholder="Enter new password" minlength="6">
+                    </div>
+                    <button type="submit" id="resetBtn" class="btn btn-primary w-100 mb-3" style="display:none">
+                        <i class="bi bi-check-circle me-1"></i>Reset Password
+                    </button>
+                </form>
+                <div class="text-center">
+                    <a href="#" onclick="showLogin()" class="text-decoration-none small"><i class="bi bi-arrow-left me-1"></i>Back to Login</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Demo credentials -->
+    <div class="card mt-3 border-0 bg-light">
+        <div class="card-body small">
+            <h6 class="card-title"><i class="bi bi-info-circle me-1"></i>Demo Credentials</h6>
+            <div class="row">
+                <div class="col-6">
+                    <strong>Employee:</strong><br>
+                    <code>employee1 / password123</code>
+                </div>
+                <div class="col-6">
+                    <strong>Customer:</strong><br>
+                    <code>customer1 / password123</code><br>
+                    <code>customer2 / password123</code>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function togglePassword(id, btn) {
+    const input = document.getElementById(id);
+    const icon = btn.querySelector('i');
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.className = 'bi bi-eye-slash';
+    } else {
+        input.type = 'password';
+        icon.className = 'bi bi-eye';
+    }
+}
+
+function showReset() {
+    document.getElementById('loginForm').style.display = 'none';
+    document.getElementById('resetForm').style.display = 'block';
+}
+
+function showLogin() {
+    document.getElementById('loginForm').style.display = 'block';
+    document.getElementById('resetForm').style.display = 'none';
+}
+
+function fetchSecurityQuestion() {
+    const username = document.getElementById('resetUsername').value;
+    if (!username) { alert('Enter a username first'); return; }
+
+    const formData = new FormData();
+    formData.append('username', username);
+    formData.append('csrf_token', CSRF_TOKEN);
+
+    fetch('/get-security-question', { method: 'POST', body: formData })
+    .then(r => r.json())
+    .then(data => {
+        if (data.question) {
+            document.getElementById('securityQuestionText').textContent = data.question;
+            document.getElementById('securityQuestionDiv').style.display = 'block';
+            document.getElementById('newPasswordDiv').style.display = 'block';
+            document.getElementById('resetBtn').style.display = 'block';
+        } else {
+            alert('User not found');
+        }
+    })
+    .catch(() => alert('Error looking up user'));
+}
+</script>
+{% endblock %}

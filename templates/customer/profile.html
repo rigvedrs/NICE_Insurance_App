@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}My Profile - NICE Insurance{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2><i class="bi bi-person me-2"></i>My Profile</h2>
+</div>
+
+<div class="row g-4">
+    <!-- Profile Info -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body text-center">
+                <div class="display-3 text-primary mb-2"><i class="bi bi-person-circle"></i></div>
+                <h4>{{ customer.FIRST_NAME }} {% if customer.MIDDLE_NAME %}{{ customer.MIDDLE_NAME }} {% endif %}{{ customer.LAST_NAME }}</h4>
+                <p class="text-muted mb-1">Customer #{{ customer.CUST_ID }}</p>
+                <div class="mb-2">
+                    {% for ct in cust_types %}
+                    <span class="badge {% if ct.CUST_TYPE == 'H' %}badge-home{% else %}badge-auto{% endif %}">
+                        {% if ct.CUST_TYPE == 'H' %}Home{% else %}Auto{% endif %}
+                    </span>
+                    {% endfor %}
+                </div>
+                <hr>
+                <div class="text-start small">
+                    <p><i class="bi bi-person me-2"></i><strong>Username:</strong> {{ user.USERNAME }}</p>
+                    <p><i class="bi bi-envelope me-2"></i><strong>Email:</strong> {{ user.EMAIL }}</p>
+                    <p><i class="bi bi-calendar me-2"></i><strong>Member since:</strong> {{ user.CREATED_AT.strftime('%b %d, %Y') if user.CREATED_AT else 'N/A' }}</p>
+                    <p><i class="bi bi-clock me-2"></i><strong>Last login:</strong> {{ user.LAST_LOGIN.strftime('%b %d, %Y %I:%M %p') if user.LAST_LOGIN else 'N/A' }}</p>
+                    <p><i class="bi bi-gender-ambiguous me-2"></i><strong>Gender:</strong> {% if customer.GENDER == 'M' %}Male{% elif customer.GENDER == 'F' %}Female{% else %}Not specified{% endif %}</p>
+                    <p class="mb-0"><i class="bi bi-heart me-2"></i><strong>Marital Status:</strong> {% if customer.MARITAL_STATUS == 'M' %}Married{% elif customer.MARITAL_STATUS == 'S' %}Single{% else %}Widowed{% endif %}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Address -->
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="bi bi-pencil me-1"></i>Update Address</h5>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('customer_profile') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="mb-3">
+                        <label class="form-label">Address Line 1</label>
+                        <input type="text" name="addr_line1" class="form-control" value="{{ customer.ADDR_LINE1 }}" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Address Line 2</label>
+                        <input type="text" name="addr_line2" class="form-control" value="{{ customer.ADDR_LINE2 or '' }}">
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-5">
+                            <label class="form-label">City</label>
+                            <input type="text" name="city" class="form-control" value="{{ customer.CITY }}" required>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">State</label>
+                            <input type="text" name="state" class="form-control" value="{{ customer.STATE }}" maxlength="2" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">ZIP Code</label>
+                            <input type="text" name="zip" class="form-control" value="{{ customer.ZIP }}" maxlength="5" required>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle me-1"></i>Save Changes</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}Manage Vehicles - NICE Insurance{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2><i class="bi bi-car-front me-2"></i>Manage Vehicles</h2>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addVehicleModal">
+        <i class="bi bi-plus-circle me-1"></i>Add Vehicle
+    </button>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr><th>ID</th><th>VIN</th><th>Make</th><th>Model</th><th>Year</th><th>Status</th><th>Policy</th><th>Owner</th><th>Actions</th></tr>
+                </thead>
+                <tbody>
+                    {% for v in vehicles %}
+                    <tr>
+                        <td>{{ v.VEHICLE_ID }}</td>
+                        <td><code>{{ v.VEHICLE_VIN }}</code></td>
+                        <td>{{ v.VEHICLE_MAKE }}</td>
+                        <td>{{ v.VEHICLE_MODEL }}</td>
+                        <td>{{ v.VEHICLE_YEAR }}</td>
+                        <td>
+                            <span class="status-dot {% if v.VEHICLE_STATUS == 'L' %}leased{% elif v.VEHICLE_STATUS == 'F' %}financed{% else %}owned{% endif %}"></span>
+                            {% if v.VEHICLE_STATUS == 'L' %}Leased{% elif v.VEHICLE_STATUS == 'F' %}Financed{% else %}Owned{% endif %}
+                        </td>
+                        <td>AP-{{ v.APOLICY_ID }}</td>
+                        <td>{{ v.FIRST_NAME }} {{ v.LAST_NAME }}</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" onclick='openEditVehicle({{ v|tojson }})' title="Edit"><i class="bi bi-pencil"></i></button>
+                            <form method="POST" action="{{ url_for('employee_delete_vehicle', vehicle_id=v.VEHICLE_ID) }}" class="d-inline" onsubmit="return confirm('Delete this vehicle?')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="9" class="text-center text-muted py-3">No vehicles found</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add Vehicle Modal -->
+<div class="modal fade" id="addVehicleModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-plus-circle me-1"></i>Add Vehicle</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <form method="POST" action="{{ url_for('employee_add_vehicle') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label">VIN *</label><input type="text" name="vin" class="form-control" maxlength="17" required></div>
+                    <div class="row g-3">
+                        <div class="col-md-6"><label class="form-label">Make *</label><input type="text" name="make" class="form-control" required></div>
+                        <div class="col-md-6"><label class="form-label">Model *</label><input type="text" name="model" class="form-control" required></div>
+                    </div>
+                    <div class="row g-3 mt-1">
+                        <div class="col-md-4"><label class="form-label">Year *</label><input type="number" name="year" class="form-control" min="1900" max="2030" required></div>
+                        <div class="col-md-4">
+                            <label class="form-label">Status *</label>
+                            <select name="status" class="form-select"><option value="L">Leased</option><option value="F">Financed</option><option value="O">Owned</option></select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Auto Policy *</label>
+                            <select name="apolicy_id" class="form-select" required>
+                                {% for p in policies %}<option value="{{ p.id }}">AP-{{ p.id }} ({{ p.FIRST_NAME }} {{ p.LAST_NAME }})</option>{% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle me-1"></i>Add Vehicle</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Vehicle Modal -->
+<div class="modal fade" id="editVehicleModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-pencil me-1"></i>Edit Vehicle</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <form method="POST" id="editVehicleForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label">VIN</label><input type="text" name="vin" id="ev_vin" class="form-control" maxlength="17" required></div>
+                    <div class="row g-3">
+                        <div class="col-md-6"><label class="form-label">Make</label><input type="text" name="make" id="ev_make" class="form-control" required></div>
+                        <div class="col-md-6"><label class="form-label">Model</label><input type="text" name="model" id="ev_model" class="form-control" required></div>
+                    </div>
+                    <div class="row g-3 mt-1">
+                        <div class="col-md-6"><label class="form-label">Year</label><input type="number" name="year" id="ev_year" class="form-control" required></div>
+                        <div class="col-md-6">
+                            <label class="form-label">Status</label>
+                            <select name="status" id="ev_status" class="form-select"><option value="L">Leased</option><option value="F">Financed</option><option value="O">Owned</option></select>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle me-1"></i>Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function openEditVehicle(v) {
+    document.getElementById('editVehicleForm').action = '/employee/vehicles/edit/' + v.VEHICLE_ID;
+    document.getElementById('ev_vin').value = v.VEHICLE_VIN;
+    document.getElementById('ev_make').value = v.VEHICLE_MAKE;
+    document.getElementById('ev_model').value = v.VEHICLE_MODEL;
+    document.getElementById('ev_year').value = v.VEHICLE_YEAR;
+    document.getElementById('ev_status').value = v.VEHICLE_STATUS;
+    new bootstrap.Modal(document.getElementById('editVehicleModal')).show();
+}
+</script>
+{% endblock %}

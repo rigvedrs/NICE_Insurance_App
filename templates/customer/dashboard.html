@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - NICE Insurance{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2><i class="bi bi-speedometer2 me-2"></i>Customer Dashboard</h2>
+    <span class="text-muted">Welcome, {{ session.get('display_name', 'Customer') }}</span>
+</div>
+
+<!-- Stats Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3 col-sm-6">
+        <div class="card stat-card">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-value">{{ stats.active_policies }}</div>
+                    <div class="stat-label">Active Policies</div>
+                </div>
+                <i class="bi bi-file-earmark-check stat-icon"></i>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card stat-card success">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-value">${{ "%.2f"|format(stats.total_premium) }}</div>
+                    <div class="stat-label">Total Premium</div>
+                </div>
+                <i class="bi bi-currency-dollar stat-icon"></i>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card stat-card warning">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-value">${{ "%.2f"|format(stats.outstanding_balance) }}</div>
+                    <div class="stat-label">Outstanding Balance</div>
+                </div>
+                <i class="bi bi-exclamation-circle stat-icon"></i>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card stat-card accent">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-value">${{ "%.2f"|format(stats.total_paid) }}</div>
+                    <div class="stat-label">Total Paid</div>
+                </div>
+                <i class="bi bi-credit-card-2-front stat-icon"></i>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Row -->
+<div class="row g-3 mb-4">
+    <div class="col-md-7">
+        <div class="chart-container">
+            <div class="chart-title">Payment History</div>
+            <canvas id="paymentHistoryChart"></canvas>
+        </div>
+    </div>
+    <div class="col-md-5">
+        <div class="chart-container">
+            <div class="chart-title">Premium Distribution</div>
+            <canvas id="premiumDistChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Invoices & Quick Actions -->
+<div class="row g-3">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h6 class="mb-0"><i class="bi bi-receipt me-1"></i>Recent Invoices</h6>
+                <a href="{{ url_for('customer_invoices') }}" class="btn btn-sm btn-outline-primary">View All</a>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr><th>Type</th><th>Invoice #</th><th>Date</th><th>Due Date</th><th>Amount</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for inv in recent_invoices %}
+                            <tr>
+                                <td><span class="badge {% if inv.type == 'Home' %}badge-home{% else %}badge-auto{% endif %}">{{ inv.type }}</span></td>
+                                <td>#{{ inv.id }}</td>
+                                <td>{{ inv.inv_date }}</td>
+                                <td>{{ inv.due_date }}</td>
+                                <td><strong>${{ "%.2f"|format(inv.amount) }}</strong></td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="5" class="text-center text-muted py-3">No invoices found</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h6 class="mb-0"><i class="bi bi-lightning me-1"></i>Quick Actions</h6>
+            </div>
+            <div class="card-body d-grid gap-2">
+                <a href="{{ url_for('customer_payments') }}" class="quick-action">
+                    <i class="bi bi-credit-card"></i>
+                    <div><strong>Make Payment</strong><br><small class="text-muted">Pay outstanding invoices</small></div>
+                </a>
+                <a href="{{ url_for('customer_policies') }}" class="quick-action">
+                    <i class="bi bi-file-earmark-text"></i>
+                    <div><strong>View Policies</strong><br><small class="text-muted">Home & Auto policies</small></div>
+                </a>
+                <a href="{{ url_for('customer_vehicles') }}" class="quick-action">
+                    <i class="bi bi-car-front"></i>
+                    <div><strong>My Vehicles</strong><br><small class="text-muted">View registered vehicles</small></div>
+                </a>
+                <a href="{{ url_for('customer_profile') }}" class="quick-action">
+                    <i class="bi bi-person-gear"></i>
+                    <div><strong>Edit Profile</strong><br><small class="text-muted">Update your information</small></div>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Payment History Chart
+    fetch('/api/chart/customer-payments')
+    .then(r => r.json())
+    .then(data => {
+        createBarChart('paymentHistoryChart', data.labels, data.data, 'Payments ($)');
+    });
+
+    // Premium Distribution
+    fetch('/api/chart/customer-premium-dist')
+    .then(r => r.json())
+    .then(data => {
+        createDoughnutChart('premiumDistChart', data.labels, data.data);
+    });
+});
+</script>
+{% endblock %}

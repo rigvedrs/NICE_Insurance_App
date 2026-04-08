@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}Manage Drivers - NICE Insurance{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2><i class="bi bi-person-badge me-2"></i>Manage Drivers</h2>
+    <div>
+        <button class="btn btn-outline-primary me-1" data-bs-toggle="modal" data-bs-target="#assignDriverModal">
+            <i class="bi bi-link me-1"></i>Assign Driver
+        </button>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addDriverModal">
+            <i class="bi bi-plus-circle me-1"></i>Add Driver
+        </button>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr><th>ID</th><th>License #</th><th>Name</th><th>Age</th><th>Assigned Vehicles</th><th>Actions</th></tr>
+                </thead>
+                <tbody>
+                    {% for d in drivers %}
+                    <tr>
+                        <td>{{ d.DRIVER_ID }}</td>
+                        <td><code>{{ d.DRIVER_LICENSE_NO }}</code></td>
+                        <td><strong>{{ d.DRIVER_FNAME }} {{ d.DRIVER_LNAME }}</strong></td>
+                        <td>{{ d.DRIVER_AGE }}</td>
+                        <td>{{ d.vehicles or '-' }}</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" onclick='openEditDriver({{ d|tojson }})' title="Edit"><i class="bi bi-pencil"></i></button>
+                            <form method="POST" action="{{ url_for('employee_delete_driver', driver_id=d.DRIVER_ID) }}" class="d-inline" onsubmit="return confirm('Delete this driver?')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="6" class="text-center text-muted py-3">No drivers found</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add Driver Modal -->
+<div class="modal fade" id="addDriverModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-plus-circle me-1"></i>Add Driver</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <form method="POST" action="{{ url_for('employee_add_driver') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label">Driver License # *</label><input type="text" name="license_no" class="form-control" required></div>
+                    <div class="row g-3">
+                        <div class="col-md-6"><label class="form-label">First Name *</label><input type="text" name="fname" class="form-control" required></div>
+                        <div class="col-md-6"><label class="form-label">Last Name *</label><input type="text" name="lname" class="form-control" required></div>
+                    </div>
+                    <div class="mt-3"><label class="form-label">Age *</label><input type="number" name="age" class="form-control" min="16" required></div>
+                    <div class="mt-3">
+                        <label class="form-label">Assign to Vehicles</label>
+                        <select name="vehicle_ids" class="form-select" multiple size="4">
+                            {% for v in vehicles %}<option value="{{ v.VEHICLE_ID }}">{{ v.VEHICLE_YEAR }} {{ v.VEHICLE_MAKE }} {{ v.VEHICLE_MODEL }}</option>{% endfor %}
+                        </select>
+                        <small class="text-muted">Hold Ctrl/Cmd to select multiple</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle me-1"></i>Add Driver</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Driver Modal -->
+<div class="modal fade" id="editDriverModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-pencil me-1"></i>Edit Driver</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <form method="POST" id="editDriverForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label">Driver License #</label><input type="text" name="license_no" id="ed_lic" class="form-control" required></div>
+                    <div class="row g-3">
+                        <div class="col-md-6"><label class="form-label">First Name</label><input type="text" name="fname" id="ed_fname" class="form-control" required></div>
+                        <div class="col-md-6"><label class="form-label">Last Name</label><input type="text" name="lname" id="ed_lname" class="form-control" required></div>
+                    </div>
+                    <div class="mt-3"><label class="form-label">Age</label><input type="number" name="age" id="ed_age" class="form-control" min="16" required></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle me-1"></i>Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Assign Driver to Vehicle Modal -->
+<div class="modal fade" id="assignDriverModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-link me-1"></i>Assign Driver to Vehicle</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <form method="POST" action="{{ url_for('employee_assign_driver') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Driver *</label>
+                        <select name="driver_id" class="form-select" required>
+                            {% for d in drivers %}<option value="{{ d.DRIVER_ID }}">{{ d.DRIVER_FNAME }} {{ d.DRIVER_LNAME }} ({{ d.DRIVER_LICENSE_NO }})</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Vehicle *</label>
+                        <select name="vehicle_id" class="form-select" required>
+                            {% for v in vehicles %}<option value="{{ v.VEHICLE_ID }}">{{ v.VEHICLE_YEAR }} {{ v.VEHICLE_MAKE }} {{ v.VEHICLE_MODEL }}</option>{% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-link me-1"></i>Assign</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function openEditDriver(d) {
+    document.getElementById('editDriverForm').action = '/employee/drivers/edit/' + d.DRIVER_ID;
+    document.getElementById('ed_lic').value = d.DRIVER_LICENSE_NO;
+    document.getElementById('ed_fname').value = d.DRIVER_FNAME;
+    document.getElementById('ed_lname').value = d.DRIVER_LNAME;
+    document.getElementById('ed_age').value = d.DRIVER_AGE;
+    new bootstrap.Modal(document.getElementById('editDriverModal')).show();
+}
+</script>
+{% endblock %}

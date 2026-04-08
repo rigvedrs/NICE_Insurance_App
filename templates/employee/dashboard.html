@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}Employee Dashboard - NICE Insurance{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2><i class="bi bi-speedometer2 me-2"></i>Employee Dashboard</h2>
+    <span class="text-muted">Welcome, {{ session.get('display_name', 'Admin') }}</span>
+</div>
+
+<!-- Stats Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3 col-sm-6">
+        <div class="card stat-card">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-value">{{ stats.total_customers }}</div>
+                    <div class="stat-label">Total Customers</div>
+                </div>
+                <i class="bi bi-people stat-icon"></i>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card stat-card success">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-value">{{ stats.active_policies }}</div>
+                    <div class="stat-label">Active Policies</div>
+                </div>
+                <i class="bi bi-file-earmark-check stat-icon"></i>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card stat-card accent">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-value">${{ "%.0f"|format(stats.total_revenue) }}</div>
+                    <div class="stat-label">Total Revenue</div>
+                </div>
+                <i class="bi bi-currency-dollar stat-icon"></i>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
+        <div class="card stat-card warning">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-value">${{ "%.0f"|format(stats.outstanding) }}</div>
+                    <div class="stat-label">Outstanding</div>
+                </div>
+                <i class="bi bi-exclamation-triangle stat-icon"></i>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Row 1 -->
+<div class="row g-3 mb-4">
+    <div class="col-md-8">
+        <div class="chart-container">
+            <div class="chart-title">Monthly Revenue</div>
+            <canvas id="monthlyRevenueChart"></canvas>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="chart-container">
+            <div class="chart-title">Policy Distribution</div>
+            <canvas id="policyDistChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Row 2 -->
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="chart-container">
+            <div class="chart-title">Customers by State</div>
+            <canvas id="custByStateChart"></canvas>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="chart-container">
+            <div class="chart-title">Payment Methods</div>
+            <canvas id="payMethodChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Top Customers & Audit Log -->
+<div class="row g-3">
+    <div class="col-md-6">
+        <div class="chart-container">
+            <div class="chart-title">Top 10 Customers by Premium</div>
+            <canvas id="topCustomersChart"></canvas>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h6 class="mb-0"><i class="bi bi-clock-history me-1"></i>Recent Policy Changes (Audit Trail)</h6>
+            </div>
+            <div class="card-body p-0" style="max-height: 380px; overflow-y: auto;">
+                {% for a in recent_audit %}
+                <div class="activity-item px-3">
+                    <span class="activity-badge {{ a.ACTION|lower }}"></span>
+                    <strong>{{ a.ACTION }}</strong> on <code>{{ a.TABLE_NAME }}</code> #{{ a.RECORD_ID }}
+                    <br><small class="text-muted">{{ a.CHANGED_AT }} by {{ a.CHANGED_BY or 'system' }}</small>
+                </div>
+                {% else %}
+                <div class="text-center text-muted py-3">No audit entries yet</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Table Counts -->
+<div class="card mt-4">
+    <div class="card-header bg-white">
+        <h6 class="mb-0"><i class="bi bi-database me-1"></i>Database Table Counts</h6>
+    </div>
+    <div class="card-body" id="tableCountsContainer">
+        <div class="text-center text-muted">Loading...</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Monthly Revenue
+    fetch('/api/chart/monthly-revenue')
+    .then(r => r.json())
+    .then(data => createLineChart('monthlyRevenueChart', data.labels, data.data, 'Revenue ($)'));
+
+    // Policy Distribution
+    fetch('/api/chart/policy-distribution')
+    .then(r => r.json())
+    .then(data => createPieChart('policyDistChart', data.labels, data.data));
+
+    // Customers by State
+    fetch('/api/chart/customer-by-state')
+    .then(r => r.json())
+    .then(data => createBarChart('custByStateChart', data.labels, data.data, 'Customers'));
+
+    // Payment Methods
+    fetch('/api/chart/payment-methods')
+    .then(r => r.json())
+    .then(data => createDoughnutChart('payMethodChart', data.labels, data.data));
+
+    // Top Customers
+    fetch('/api/chart/top-customers')
+    .then(r => r.json())
+    .then(data => createHorizontalBarChart('topCustomersChart', data.labels, data.data, 'Premium ($)'));
+
+    // Table Counts
+    loadTableCounts();
+});
+</script>
+{% endblock %}

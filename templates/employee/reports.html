@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% block title %}Business Reports - NICE Insurance{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2><i class="bi bi-bar-chart me-2"></i>Business Analytics & Reports</h2>
+</div>
+
+<!-- Key Metrics -->
+<div class="row g-3 mb-4" id="reportMetrics">
+    <div class="col-md-2 col-sm-4">
+        <div class="card text-center p-3">
+            <div class="stat-value" id="metricCustomers">--</div>
+            <small class="text-muted">Customers</small>
+        </div>
+    </div>
+    <div class="col-md-2 col-sm-4">
+        <div class="card text-center p-3">
+            <div class="stat-value" id="metricHomePolicies">--</div>
+            <small class="text-muted">Home Policies</small>
+        </div>
+    </div>
+    <div class="col-md-2 col-sm-4">
+        <div class="card text-center p-3">
+            <div class="stat-value" id="metricAutoPolicies">--</div>
+            <small class="text-muted">Auto Policies</small>
+        </div>
+    </div>
+    <div class="col-md-2 col-sm-4">
+        <div class="card text-center p-3">
+            <div class="stat-value" id="metricVehicles">--</div>
+            <small class="text-muted">Vehicles</small>
+        </div>
+    </div>
+    <div class="col-md-2 col-sm-4">
+        <div class="card text-center p-3">
+            <div class="stat-value" id="metricDrivers">--</div>
+            <small class="text-muted">Drivers</small>
+        </div>
+    </div>
+    <div class="col-md-2 col-sm-4">
+        <div class="card text-center p-3">
+            <div class="stat-value" id="metricUsers">--</div>
+            <small class="text-muted">Users</small>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Grid -->
+<div class="row g-3 mb-4">
+    <div class="col-md-8">
+        <div class="chart-container">
+            <div class="chart-title">Monthly Revenue Trend</div>
+            <canvas id="rptRevenueChart"></canvas>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="chart-container">
+            <div class="chart-title">Policy Type Distribution</div>
+            <canvas id="rptPolicyChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="chart-container">
+            <div class="chart-title">Customers by State</div>
+            <canvas id="rptStateChart"></canvas>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="chart-container">
+            <div class="chart-title">Payment Methods Breakdown</div>
+            <canvas id="rptPayMethodChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="chart-container">
+            <div class="chart-title">Top 10 Customers by Premium</div>
+            <canvas id="rptTopCustChart"></canvas>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="chart-container">
+            <div class="chart-title">Invoice Status Overview</div>
+            <canvas id="rptInvoiceStatusChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-md-12">
+        <div class="chart-container">
+            <div class="chart-title">Premium Revenue by Month (Home vs Auto)</div>
+            <canvas id="rptPremiumByMonth"></canvas>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Load metrics
+    fetch('/api/table-counts')
+    .then(r => r.json())
+    .then(data => {
+        document.getElementById('metricCustomers').textContent = data.RAH_CUSTOMER || 0;
+        document.getElementById('metricHomePolicies').textContent = data.RAH_HOME_POLICY || 0;
+        document.getElementById('metricAutoPolicies').textContent = data.RAH_AUTO_POLICY || 0;
+        document.getElementById('metricVehicles').textContent = data.RAH_VEHICLE || 0;
+        document.getElementById('metricDrivers').textContent = data.RAH_DRIVER || 0;
+        document.getElementById('metricUsers').textContent = data.RAH_USER || 0;
+    });
+
+    // Revenue
+    fetch('/api/chart/monthly-revenue')
+    .then(r => r.json())
+    .then(data => createLineChart('rptRevenueChart', data.labels, data.data, 'Revenue ($)'));
+
+    // Policy Distribution
+    fetch('/api/chart/policy-distribution')
+    .then(r => r.json())
+    .then(data => createPieChart('rptPolicyChart', data.labels, data.data));
+
+    // State
+    fetch('/api/chart/customer-by-state')
+    .then(r => r.json())
+    .then(data => createBarChart('rptStateChart', data.labels, data.data, 'Customers'));
+
+    // Payment Methods
+    fetch('/api/chart/payment-methods')
+    .then(r => r.json())
+    .then(data => createDoughnutChart('rptPayMethodChart', data.labels, data.data));
+
+    // Top Customers
+    fetch('/api/chart/top-customers')
+    .then(r => r.json())
+    .then(data => createHorizontalBarChart('rptTopCustChart', data.labels, data.data, 'Premium ($)'));
+
+    // Invoice Status
+    fetch('/api/chart/invoice-status')
+    .then(r => r.json())
+    .then(data => createBarChart('rptInvoiceStatusChart', data.labels, data.data, 'Invoices'));
+
+    // Premium by month
+    fetch('/api/chart/premium-by-month')
+    .then(r => r.json())
+    .then(data => {
+        const homeData = {}, autoData = {};
+        const labels = new Set();
+        data.forEach(r => {
+            labels.add(r.month);
+            if (r.type === 'Home') homeData[r.month] = r.total;
+            else autoData[r.month] = r.total;
+        });
+        const sortedLabels = Array.from(labels).sort();
+        const ctx = document.getElementById('rptPremiumByMonth').getContext('2d');
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: sortedLabels,
+                datasets: [
+                    { label: 'Home Premium', data: sortedLabels.map(l => homeData[l] || 0), backgroundColor: '#3498db' },
+                    { label: 'Auto Premium', data: sortedLabels.map(l => autoData[l] || 0), backgroundColor: '#9b59b6' }
+                ]
+            },
+            options: { responsive: true, plugins: { legend: { position: 'top' } }, scales: { y: { beginAtZero: true } } }
+        });
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}My Policies - NICE Insurance{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2><i class="bi bi-file-earmark-text me-2"></i>My Policies</h2>
+</div>
+
+<!-- Home Policies -->
+<div class="card mb-4">
+    <div class="card-header bg-white">
+        <h5 class="mb-0"><i class="bi bi-house me-1"></i>Home Policies <span class="badge bg-secondary">{{ home_policies|length }}</span></h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr><th>Policy #</th><th>Start Date</th><th>End Date</th><th>Premium</th><th>Status</th><th>Home Type</th><th>Purchase Value</th><th>Area (sqft)</th></tr>
+                </thead>
+                <tbody>
+                    {% for p in home_policies %}
+                    <tr>
+                        <td><strong>HP-{{ p.HPOLICY_ID }}</strong></td>
+                        <td>{{ p.HPOLICY_START_DT }}</td>
+                        <td>{{ p.HPOLICY_END_DT }}</td>
+                        <td>${{ "%.2f"|format(p.HPREMIUM_AMT) }}</td>
+                        <td>
+                            {% if p.HPOLICY_STATUS == 'C' %}
+                            <span class="badge badge-active">Active</span>
+                            {% else %}
+                            <span class="badge badge-expired">Expired</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if p.HOME_TYPE == 'S' %}Single Family
+                            {% elif p.HOME_TYPE == 'M' %}Multi Family
+                            {% elif p.HOME_TYPE == 'C' %}Condo
+                            {% elif p.HOME_TYPE == 'T' %}Townhouse
+                            {% else %}N/A{% endif %}
+                        </td>
+                        <td>{% if p.HOME_PURCHASE_VAL %}${{ "%.0f"|format(p.HOME_PURCHASE_VAL) }}{% else %}N/A{% endif %}</td>
+                        <td>{% if p.HOME_AREA_SQFT %}{{ "%.0f"|format(p.HOME_AREA_SQFT) }}{% else %}N/A{% endif %}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="8" class="text-center text-muted py-3">No home policies found</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Auto Policies -->
+<div class="card">
+    <div class="card-header bg-white">
+        <h5 class="mb-0"><i class="bi bi-car-front me-1"></i>Auto Policies <span class="badge bg-secondary">{{ auto_policies|length }}</span></h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr><th>Policy #</th><th>Start Date</th><th>End Date</th><th>Premium</th><th>Status</th><th>Vehicles</th></tr>
+                </thead>
+                <tbody>
+                    {% for p in auto_policies %}
+                    <tr>
+                        <td><strong>AP-{{ p.APOLICY_ID }}</strong></td>
+                        <td>{{ p.APOLICY_START_DT }}</td>
+                        <td>{{ p.APOLICY_END_DT }}</td>
+                        <td>${{ "%.2f"|format(p.APREMIUM_AMT) }}</td>
+                        <td>
+                            {% if p.APOLICY_STATUS == 'C' %}
+                            <span class="badge badge-active">Active</span>
+                            {% else %}
+                            <span class="badge badge-expired">Expired</span>
+                            {% endif %}
+                        </td>
+                        <td><span class="badge bg-info">{{ p.vehicle_count }} vehicle(s)</span></td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="6" class="text-center text-muted py-3">No auto policies found</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

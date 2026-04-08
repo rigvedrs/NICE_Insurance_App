@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+{% block title %}Manage Customers - NICE Insurance{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2><i class="bi bi-people me-2"></i>Manage Customers</h2>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addCustomerModal">
+        <i class="bi bi-plus-circle me-1"></i>Add Customer
+    </button>
+</div>
+
+<!-- Search -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form method="GET" class="row g-2 align-items-center">
+            <div class="col-md-8">
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" name="search" class="form-control" placeholder="Search by name, city, or state..." value="{{ search }}">
+                </div>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">Search</button>
+            </div>
+            <div class="col-md-2">
+                <a href="{{ url_for('employee_customers') }}" class="btn btn-outline-secondary w-100">Clear</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Customers Table -->
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>ID</th><th>Name</th><th>City</th><th>State</th><th>ZIP</th>
+                        <th>Gender</th><th>Marital</th><th>Types</th><th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in customers %}
+                    <tr>
+                        <td>{{ c.CUST_ID }}</td>
+                        <td><strong>{{ c.FIRST_NAME }} {% if c.MIDDLE_NAME %}{{ c.MIDDLE_NAME }} {% endif %}{{ c.LAST_NAME }}</strong></td>
+                        <td>{{ c.CITY }}</td>
+                        <td>{{ c.STATE }}</td>
+                        <td>{{ c.ZIP }}</td>
+                        <td>{% if c.GENDER == 'M' %}Male{% elif c.GENDER == 'F' %}Female{% else %}-{% endif %}</td>
+                        <td>{% if c.MARITAL_STATUS == 'M' %}Married{% elif c.MARITAL_STATUS == 'S' %}Single{% else %}Widowed{% endif %}</td>
+                        <td>
+                            {% if c.types %}
+                                {% for t in c.types.split(',') %}
+                                <span class="badge {% if t == 'H' %}badge-home{% else %}badge-auto{% endif %}">{{ 'Home' if t == 'H' else 'Auto' }}</span>
+                                {% endfor %}
+                            {% else %}-{% endif %}
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" onclick='openEditCustomer({{ c|tojson }})' title="Edit">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <form method="POST" action="{{ url_for('employee_delete_customer', cust_id=c.CUST_ID) }}" class="d-inline" onsubmit="return confirm('Delete customer #{{ c.CUST_ID }}? This will delete all related policies, invoices, and payments.')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="9" class="text-center text-muted py-3">No customers found</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<nav class="mt-3">
+    <ul class="pagination justify-content-center">
+        <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+            <a class="page-link" href="?page={{ page-1 }}&search={{ search }}">Previous</a>
+        </li>
+        {% for p in range(1, total_pages + 1) %}
+        <li class="page-item {% if p == page %}active{% endif %}">
+            <a class="page-link" href="?page={{ p }}&search={{ search }}">{{ p }}</a>
+        </li>
+        {% endfor %}
+        <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+            <a class="page-link" href="?page={{ page+1 }}&search={{ search }}">Next</a>
+        </li>
+    </ul>
+</nav>
+{% endif %}
+
+<!-- Add Customer Modal -->
+<div class="modal fade" id="addCustomerModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-person-plus me-1"></i>Add Customer</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('employee_add_customer') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">First Name *</label>
+                            <input type="text" name="first_name" class="form-control" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Middle Name</label>
+                            <input type="text" name="middle_name" class="form-control">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Last Name *</label>
+                            <input type="text" name="last_name" class="form-control" required>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label">Address Line 1 *</label>
+                            <input type="text" name="addr_line1" class="form-control" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Address Line 2</label>
+                            <input type="text" name="addr_line2" class="form-control">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">City *</label>
+                            <input type="text" name="city" class="form-control" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">State *</label>
+                            <input type="text" name="state" class="form-control" maxlength="2" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">ZIP *</label>
+                            <input type="text" name="zip" class="form-control" maxlength="5" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Gender</label>
+                            <select name="gender" class="form-select">
+                                <option value="">--</option>
+                                <option value="M">Male</option>
+                                <option value="F">Female</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Marital Status *</label>
+                            <select name="marital_status" class="form-select" required>
+                                <option value="S">Single</option>
+                                <option value="M">Married</option>
+                                <option value="W">Widowed</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Customer Type</label>
+                            <div class="mt-1">
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="checkbox" name="cust_types" value="H" id="typeH">
+                                    <label class="form-check-label" for="typeH">Home</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="checkbox" name="cust_types" value="A" id="typeA">
+                                    <label class="form-check-label" for="typeA">Auto</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle me-1"></i>Add Customer</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Customer Modal -->
+<div class="modal fade" id="editCustomerModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-pencil me-1"></i>Edit Customer</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" id="editCustomerForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">First Name *</label>
+                            <input type="text" name="first_name" id="edit_first_name" class="form-control" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Middle Name</label>
+                            <input type="text" name="middle_name" id="edit_middle_name" class="form-control">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Last Name *</label>
+                            <input type="text" name="last_name" id="edit_last_name" class="form-control" required>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label">Address Line 1 *</label>
+                            <input type="text" name="addr_line1" id="edit_addr_line1" class="form-control" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Address Line 2</label>
+                            <input type="text" name="addr_line2" id="edit_addr_line2" class="form-control">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">City *</label>
+                            <input type="text" name="city" id="edit_city" class="form-control" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">State *</label>
+                            <input type="text" name="state" id="edit_state" class="form-control" maxlength="2" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">ZIP *</label>
+                            <input type="text" name="zip" id="edit_zip" class="form-control" maxlength="5" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Gender</label>
+                            <select name="gender" id="edit_gender" class="form-select">
+                                <option value="">--</option>
+                                <option value="M">Male</option>
+                                <option value="F">Female</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Marital Status *</label>
+                            <select name="marital_status" id="edit_marital" class="form-select" required>
+                                <option value="S">Single</option>
+                                <option value="M">Married</option>
+                                <option value="W">Widowed</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle me-1"></i>Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function openEditCustomer(c) {
+    document.getElementById('editCustomerForm').action = '/employee/customers/edit/' + c.CUST_ID;
+    document.getElementById('edit_first_name').value = c.FIRST_NAME || '';
+    document.getElementById('edit_middle_name').value = c.MIDDLE_NAME || '';
+    document.getElementById('edit_last_name').value = c.LAST_NAME || '';
+    document.getElementById('edit_addr_line1').value = c.ADDR_LINE1 || '';
+    document.getElementById('edit_addr_line2').value = c.ADDR_LINE2 || '';
+    document.getElementById('edit_city').value = c.CITY || '';
+    document.getElementById('edit_state').value = c.STATE || '';
+    document.getElementById('edit_zip').value = c.ZIP || '';
+    document.getElementById('edit_gender').value = c.GENDER || '';
+    document.getElementById('edit_marital').value = c.MARITAL_STATUS || 'S';
+    new bootstrap.Modal(document.getElementById('editCustomerModal')).show();
+}
+</script>
+{% endblock %}

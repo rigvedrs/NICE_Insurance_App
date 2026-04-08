@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}Index Performance Analysis - NICE Insurance{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2><i class="bi bi-lightning me-2"></i>Database Index Analysis</h2>
+    <span class="badge bg-info fs-6">Extra Credit</span>
+</div>
+
+<div class="alert alert-info">
+    <i class="bi bi-info-circle me-1"></i>
+    <strong>About Index Analysis:</strong> This page demonstrates strategic database indexing for performance optimization.
+    Each index below was created to speed up common queries used throughout the application.
+    EXPLAIN output shows how MySQL uses these indexes to optimize query execution.
+</div>
+
+<!-- Index Summary -->
+<div class="card mb-4">
+    <div class="card-header bg-white">
+        <h5 class="mb-0"><i class="bi bi-list-check me-1"></i>Custom Indexes Created ({{ indexes|length }} total columns indexed)</h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr><th>Index Name</th><th>Table</th><th>Column</th></tr>
+                </thead>
+                <tbody>
+                    {% for idx in indexes %}
+                    <tr>
+                        <td><code>{{ idx.INDEX_NAME }}</code></td>
+                        <td>{{ idx.TABLE_NAME }}</td>
+                        <td>{{ idx.COLUMN_NAME }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="3" class="text-center text-muted py-3">No custom indexes found</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- EXPLAIN Analysis -->
+<div class="card mb-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-search me-1"></i>EXPLAIN Query Analysis</h5>
+        <button class="btn btn-sm btn-primary" onclick="loadExplainAnalysis()">
+            <i class="bi bi-arrow-clockwise me-1"></i>Run Analysis
+        </button>
+    </div>
+    <div class="card-body" id="explainResults">
+        <div class="text-center text-muted py-3">Click "Run Analysis" to execute EXPLAIN queries</div>
+    </div>
+</div>
+
+<!-- Index Rationale -->
+<div class="card">
+    <div class="card-header bg-white">
+        <h5 class="mb-0"><i class="bi bi-book me-1"></i>Index Design Rationale</h5>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <div class="card index-card mb-3">
+                    <div class="card-body">
+                        <h6><code>idx_customer_state</code> / <code>idx_customer_city</code></h6>
+                        <p class="small text-muted mb-0">Customers are frequently filtered by geographic location for analytics and reports. These indexes turn full table scans into efficient index lookups.</p>
+                    </div>
+                </div>
+                <div class="card index-card mb-3">
+                    <div class="card-body">
+                        <h6><code>idx_home_policy_cust</code> / <code>idx_auto_policy_cust</code></h6>
+                        <p class="small text-muted mb-0">Every customer dashboard and detail page joins policies to customers. These indexes dramatically speed up the JOIN operation on CUST_ID.</p>
+                    </div>
+                </div>
+                <div class="card index-card mb-3">
+                    <div class="card-body">
+                        <h6><code>idx_home_policy_status</code> / <code>idx_auto_policy_status</code></h6>
+                        <p class="small text-muted mb-0">Dashboard stats and policy listings frequently filter by active/expired status. With only 2 distinct values, the optimizer uses these efficiently for partial-table reads.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card index-card mb-3">
+                    <div class="card-body">
+                        <h6><code>idx_home_invoice_policy</code> / <code>idx_auto_invoice_policy</code></h6>
+                        <p class="small text-muted mb-0">Invoice pages join invoices to policies. These foreign key indexes optimize the JOIN and also speed up cascading deletes when a policy is removed.</p>
+                    </div>
+                </div>
+                <div class="card index-card mb-3">
+                    <div class="card-body">
+                        <h6><code>idx_vehicle_policy</code></h6>
+                        <p class="small text-muted mb-0">Vehicle listings are always filtered by auto policy. This index enables efficient lookups of vehicles belonging to a specific policy.</p>
+                    </div>
+                </div>
+                <div class="card index-card mb-3">
+                    <div class="card-body">
+                        <h6><code>idx_user_role</code> / <code>idx_user_custid</code></h6>
+                        <p class="small text-muted mb-0">Authentication and authorization queries filter users by role and customer ID on every request. These indexes keep login and session validation fast.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function loadExplainAnalysis() {
+    const container = document.getElementById('explainResults');
+    container.innerHTML = '<div class="text-center py-3"><div class="spinner-border text-primary"></div><p class="mt-2 text-muted">Running EXPLAIN queries...</p></div>';
+
+    fetch('/api/index-analysis')
+    .then(r => r.json())
+    .then(analyses => {
+        let html = '';
+        analyses.forEach(a => {
+            html += `<div class="card index-card mb-3">
+                <div class="card-body">
+                    <h6 class="d-flex justify-content-between">
+                        <span>${a.name}</span>
+                        <code class="text-primary">${a.index}</code>
+                    </h6>
+                    <p class="small text-muted"><strong>Table:</strong> ${a.table} | <strong>Columns:</strong> ${a.columns}</p>
+                    <p class="small text-muted mb-2"><strong>Rationale:</strong> ${a.reason}</p>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered explain-table mb-0">
+                            <thead class="table-light">
+                                <tr>`;
+
+            if (a.explain && a.explain.length > 0) {
+                const keys = Object.keys(a.explain[0]);
+                keys.forEach(k => { html += `<th>${k}</th>`; });
+                html += '</tr></thead><tbody>';
+                a.explain.forEach(row => {
+                    html += '<tr>';
+                    keys.forEach(k => {
+                        let val = row[k];
+                        let cls = '';
+                        if (k === 'key' && val && val.startsWith('idx_')) cls = 'class="fw-bold text-success"';
+                        if (k === 'type' && val === 'ref') cls = 'class="fw-bold text-success"';
+                        html += `<td ${cls}>${val !== null ? val : 'NULL'}</td>`;
+                    });
+                    html += '</tr>';
+                });
+            }
+            html += '</tbody></table></div></div></div>';
+        });
+        container.innerHTML = html;
+    })
+    .catch(err => {
+        container.innerHTML = '<div class="alert alert-danger">Error running analysis: ' + err + '</div>';
+    });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Payments - NICE Insurance{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2><i class="bi bi-credit-card me-2"></i>Payments</h2>
+</div>
+
+<div class="row g-4">
+    <!-- Make Payment -->
+    <div class="col-md-5">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="bi bi-plus-circle me-1"></i>Make a Payment</h5>
+            </div>
+            <div class="card-body">
+                {% if unpaid_invoices %}
+                <form method="POST" action="{{ url_for('customer_payments') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="mb-3">
+                        <label class="form-label">Select Invoice</label>
+                        <select name="invoice_id" id="invoiceSelect" class="form-select" required onchange="updatePaymentFields()">
+                            <option value="">-- Select an unpaid invoice --</option>
+                            {% for inv in unpaid_invoices %}
+                            <option value="{{ inv.invoice_id }}" data-type="{{ inv.type }}" data-remaining="{{ inv.remaining }}">
+                                {{ inv.type|capitalize }} Invoice #{{ inv.invoice_id }} (Policy #{{ inv.policy_id }}) - Due: {{ inv.due_date }} - Remaining: ${{ "%.2f"|format(inv.remaining) }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <input type="hidden" name="payment_type" id="paymentType">
+                    <div class="mb-3">
+                        <label class="form-label">Amount ($)</label>
+                        <input type="number" name="amount" id="paymentAmount" class="form-control" step="0.01" min="0.01" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Payment Method</label>
+                        <select name="payment_method" class="form-select" required>
+                            <option value="Credit">Credit Card</option>
+                            <option value="Debit">Debit Card</option>
+                            <option value="PayPal">PayPal</option>
+                            <option value="Check">Check</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-check-circle me-1"></i>Process Payment
+                    </button>
+                </form>
+                {% else %}
+                <div class="text-center py-4 text-muted">
+                    <i class="bi bi-check-circle display-4"></i>
+                    <p class="mt-2">No outstanding invoices. You're all caught up!</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Payment History -->
+    <div class="col-md-7">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="bi bi-clock-history me-1"></i>Payment History</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr><th>Type</th><th>Date</th><th>Amount</th><th>Method</th><th>Invoice #</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for p in payments %}
+                            <tr>
+                                <td><span class="badge {% if p.type == 'Home' %}badge-home{% else %}badge-auto{% endif %}">{{ p.type }}</span></td>
+                                <td>{{ p.pay_date }}</td>
+                                <td><strong>${{ "%.2f"|format(p.amount) }}</strong></td>
+                                <td>{{ p.method }}</td>
+                                <td>#{{ p.invoice_id }}</td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="5" class="text-center text-muted py-3">No payments found</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function updatePaymentFields() {
+    const sel = document.getElementById('invoiceSelect');
+    const opt = sel.options[sel.selectedIndex];
+    if (opt.value) {
+        document.getElementById('paymentType').value = opt.dataset.type;
+        document.getElementById('paymentAmount').value = parseFloat(opt.dataset.remaining).toFixed(2);
+        document.getElementById('paymentAmount').max = opt.dataset.remaining;
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% block title %}Manage Policies - NICE Insurance{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2><i class="bi bi-file-earmark-text me-2"></i>Manage Policies</h2>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addPolicyModal">
+        <i class="bi bi-plus-circle me-1"></i>Add Policy
+    </button>
+</div>
+
+<!-- Type Toggle & Search -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form method="GET" class="row g-2 align-items-center">
+            <div class="col-md-3">
+                <div class="btn-group w-100" role="group">
+                    <a href="?type=home&search={{ search }}" class="btn btn-{% if policy_type == 'home' %}primary{% else %}outline-primary{% endif %}">
+                        <i class="bi bi-house me-1"></i>Home
+                    </a>
+                    <a href="?type=auto&search={{ search }}" class="btn btn-{% if policy_type == 'auto' %}primary{% else %}outline-primary{% endif %}">
+                        <i class="bi bi-car-front me-1"></i>Auto
+                    </a>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <input type="hidden" name="type" value="{{ policy_type }}">
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" name="search" class="form-control" placeholder="Search by name or policy ID..." value="{{ search }}">
+                </div>
+            </div>
+            <div class="col-md-2"><button type="submit" class="btn btn-primary w-100">Search</button></div>
+            <div class="col-md-1"><a href="?type={{ policy_type }}" class="btn btn-outline-secondary w-100">Clear</a></div>
+        </form>
+    </div>
+</div>
+
+<!-- Policies Table -->
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    {% if policy_type == 'home' %}
+                    <tr><th>Policy #</th><th>Customer</th><th>Start</th><th>End</th><th>Premium</th><th>Status</th><th>Home Type</th><th>Actions</th></tr>
+                    {% else %}
+                    <tr><th>Policy #</th><th>Customer</th><th>Start</th><th>End</th><th>Premium</th><th>Status</th><th>Vehicles</th><th>Actions</th></tr>
+                    {% endif %}
+                </thead>
+                <tbody>
+                    {% for p in policies %}
+                    <tr>
+                        {% if policy_type == 'home' %}
+                        <td><strong>HP-{{ p.HPOLICY_ID }}</strong></td>
+                        <td>{{ p.FIRST_NAME }} {{ p.LAST_NAME }}</td>
+                        <td>{{ p.HPOLICY_START_DT }}</td>
+                        <td>{{ p.HPOLICY_END_DT }}</td>
+                        <td>${{ "%.2f"|format(p.HPREMIUM_AMT) }}</td>
+                        <td><span class="badge {% if p.HPOLICY_STATUS == 'C' %}badge-active{% else %}badge-expired{% endif %}">{{ 'Active' if p.HPOLICY_STATUS == 'C' else 'Expired' }}</span></td>
+                        <td>{% if p.HOME_TYPE %}{% if p.HOME_TYPE == 'S' %}Single{% elif p.HOME_TYPE == 'M' %}Multi{% elif p.HOME_TYPE == 'C' %}Condo{% else %}Town{% endif %}{% else %}-{% endif %}</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" onclick='openEditPolicy("home", {{ p.HPOLICY_ID }}, "{{ p.HPOLICY_START_DT }}", "{{ p.HPOLICY_END_DT }}", {{ p.HPREMIUM_AMT }}, "{{ p.HPOLICY_STATUS }}")' title="Edit"><i class="bi bi-pencil"></i></button>
+                            <button class="btn btn-sm btn-outline-success" onclick='openRenewPolicy("home", {{ p.HPOLICY_ID }})' title="Renew"><i class="bi bi-arrow-repeat"></i></button>
+                            <form method="POST" action="{{ url_for('employee_delete_policy', policy_type='home', policy_id=p.HPOLICY_ID) }}" class="d-inline" onsubmit="return confirm('Delete this policy and all related data?')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                            </form>
+                        </td>
+                        {% else %}
+                        <td><strong>AP-{{ p.APOLICY_ID }}</strong></td>
+                        <td>{{ p.FIRST_NAME }} {{ p.LAST_NAME }}</td>
+                        <td>{{ p.APOLICY_START_DT }}</td>
+                        <td>{{ p.APOLICY_END_DT }}</td>
+                        <td>${{ "%.2f"|format(p.APREMIUM_AMT) }}</td>
+                        <td><span class="badge {% if p.APOLICY_STATUS == 'C' %}badge-active{% else %}badge-expired{% endif %}">{{ 'Active' if p.APOLICY_STATUS == 'C' else 'Expired' }}</span></td>
+                        <td><span class="badge bg-info">{{ p.vehicle_count }}</span></td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" onclick='openEditPolicy("auto", {{ p.APOLICY_ID }}, "{{ p.APOLICY_START_DT }}", "{{ p.APOLICY_END_DT }}", {{ p.APREMIUM_AMT }}, "{{ p.APOLICY_STATUS }}")' title="Edit"><i class="bi bi-pencil"></i></button>
+                            <button class="btn btn-sm btn-outline-success" onclick='openRenewPolicy("auto", {{ p.APOLICY_ID }})' title="Renew"><i class="bi bi-arrow-repeat"></i></button>
+                            <form method="POST" action="{{ url_for('employee_delete_policy', policy_type='auto', policy_id=p.APOLICY_ID) }}" class="d-inline" onsubmit="return confirm('Delete this policy and all related data?')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                            </form>
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="8" class="text-center text-muted py-3">No policies found</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add Policy Modal -->
+<div class="modal fade" id="addPolicyModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-plus-circle me-1"></i>Add Policy</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <form method="POST" action="{{ url_for('employee_add_policy') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Policy Type *</label>
+                        <select name="policy_type" class="form-select" required>
+                            <option value="home" {% if policy_type == 'home' %}selected{% endif %}>Home</option>
+                            <option value="auto" {% if policy_type == 'auto' %}selected{% endif %}>Auto</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Customer *</label>
+                        <select name="cust_id" class="form-select" required>
+                            {% for c in customers %}
+                            <option value="{{ c.CUST_ID }}">{{ c.CUST_ID }} - {{ c.FIRST_NAME }} {{ c.LAST_NAME }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Start Date *</label>
+                            <input type="date" name="start_date" class="form-control" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">End Date *</label>
+                            <input type="date" name="end_date" class="form-control" required>
+                        </div>
+                    </div>
+                    <div class="row g-3 mt-1">
+                        <div class="col-md-6">
+                            <label class="form-label">Premium ($) *</label>
+                            <input type="number" name="premium" class="form-control" step="0.01" min="0" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Status *</label>
+                            <select name="status" class="form-select"><option value="C">Active</option><option value="E">Expired</option></select>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle me-1"></i>Create Policy</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Policy Modal -->
+<div class="modal fade" id="editPolicyModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-pencil me-1"></i>Edit Policy</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <form method="POST" id="editPolicyForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6"><label class="form-label">Start Date</label><input type="date" name="start_date" id="ep_start" class="form-control" required></div>
+                        <div class="col-md-6"><label class="form-label">End Date</label><input type="date" name="end_date" id="ep_end" class="form-control" required></div>
+                    </div>
+                    <div class="row g-3 mt-1">
+                        <div class="col-md-6"><label class="form-label">Premium ($)</label><input type="number" name="premium" id="ep_premium" class="form-control" step="0.01" required></div>
+                        <div class="col-md-6"><label class="form-label">Status</label><select name="status" id="ep_status" class="form-select"><option value="C">Active</option><option value="E">Expired</option></select></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle me-1"></i>Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Renew Policy Modal -->
+<div class="modal fade" id="renewPolicyModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white"><h5 class="modal-title"><i class="bi bi-arrow-repeat me-1"></i>Renew Policy</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+            <form method="POST" id="renewPolicyForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-body">
+                    <p class="text-muted">This will expire the current policy and create a new one.</p>
+                    <div class="row g-3">
+                        <div class="col-md-6"><label class="form-label">New Start Date</label><input type="date" name="new_start" class="form-control" required></div>
+                        <div class="col-md-6"><label class="form-label">New End Date</label><input type="date" name="new_end" class="form-control" required></div>
+                    </div>
+                    <div class="mt-3"><label class="form-label">New Premium ($)</label><input type="number" name="new_premium" class="form-control" step="0.01" required></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success"><i class="bi bi-arrow-repeat me-1"></i>Renew Policy</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function openEditPolicy(type, id, start, end, premium, status) {
+    document.getElementById('editPolicyForm').action = '/employee/policies/edit/' + type + '/' + id;
+    document.getElementById('ep_start').value = start;
+    document.getElementById('ep_end').value = end;
+    document.getElementById('ep_premium').value = premium;
+    document.getElementById('ep_status').value = status;
+    new bootstrap.Modal(document.getElementById('editPolicyModal')).show();
+}
+
+function openRenewPolicy(type, id) {
+    document.getElementById('renewPolicyForm').action = '/employee/policies/renew/' + type + '/' + id;
+    new bootstrap.Modal(document.getElementById('renewPolicyModal')).show();
+}
+</script>
+{% endblock %}
