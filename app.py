@@ -1450,7 +1450,7 @@ def api_monthly_revenue():
         fetchall=True
     )
     return jsonify({
-        'labels': [r['month'] for r in data],
+        'labels': [datetime.strptime(r['month'], '%Y-%m').strftime('%b %Y') for r in data],
         'data': [float(r['total']) for r in data]
     })
 

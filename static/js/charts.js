@@ -136,7 +136,16 @@ function createLineChart(canvasId, labels, data, label) {
             ...DEFAULT_OPTIONS,
             scales: {
                 y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' } },
-                x: { grid: { display: false } }
+                x: {
+                    grid: { display: false },
+                    type: 'category',
+                    ticks: {
+                        maxRotation: 45,
+                        minRotation: 45,
+                        autoSkip: true,
+                        maxTicksLimit: 14,
+                    }
+                }
             }
         }
     });
