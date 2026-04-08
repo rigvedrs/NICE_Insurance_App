@@ -86,6 +86,10 @@ function createBarChart(canvasId, labels, data, label, colors) {
 function createHorizontalBarChart(canvasId, labels, data, label) {
     const ctx = document.getElementById(canvasId);
     if (!ctx) return null;
+    // Fix height on the parent so Chart.js fills a stable container
+    const wrapper = ctx.parentElement;
+    wrapper.style.position = 'relative';
+    wrapper.style.height = Math.max(260, labels.length * 36) + 'px';
     return new Chart(ctx.getContext('2d'), {
         type: 'bar',
         data: {
@@ -101,6 +105,7 @@ function createHorizontalBarChart(canvasId, labels, data, label) {
         },
         options: {
             ...DEFAULT_OPTIONS,
+            maintainAspectRatio: false,
             indexAxis: 'y',
             scales: {
                 x: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' } },

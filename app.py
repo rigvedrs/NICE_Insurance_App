@@ -551,13 +551,13 @@ def customer_dashboard():
     # Recent invoices
     recent_invoices = execute_query(
         """(SELECT 'Home' as type, HINVOICE_ID as id, HINVOICE_DT as inv_date,
-            HINVOICE_DUE_DT as due_date, HINVOICE_AMT as amount, HPOLICY_ID as policy_id
+            HINVOICE_DUE_DT as due_date, HINVOICE_AMT as amount, hi.HPOLICY_ID as policy_id
            FROM RAH_HOME_INVOICE hi
            JOIN RAH_HOME_POLICY hp ON hi.HPOLICY_ID = hp.HPOLICY_ID
            WHERE hp.CUST_ID = %s)
            UNION ALL
-           (SELECT 'Auto' as type, AINVOICE_ID as id, AINVOICE_DT as inv_date,
-            AINVOICE_DUE_DT as due_date, AINVOICE_AMT as amount, APOLICY_ID as policy_id
+           (SELECT 'Auto' as type, ai.AINVOICE_ID as id, ai.AINVOICE_DT as inv_date,
+            ai.AINVOICE_DUE_DT as due_date, ai.AINVOICE_AMT as amount, ai.APOLICY_ID as policy_id
            FROM RAH_AUTO_INVOICE ai
            JOIN RAH_AUTO_POLICY ap ON ai.APOLICY_ID = ap.APOLICY_ID
            WHERE ap.CUST_ID = %s)
@@ -681,15 +681,15 @@ def customer_payments():
 
     # Payment history
     payments = execute_query(
-        """(SELECT 'Home' as type, HPAYMENT_ID as id, HPAYMENT_DT as pay_date,
-            HPAYMENT_AMT as amount, HPAYMENT_METHOD as method, HINVOICE_ID as invoice_id
+        """(SELECT 'Home' as type, hp.HPAYMENT_ID as id, hp.HPAYMENT_DT as pay_date,
+            hp.HPAYMENT_AMT as amount, hp.HPAYMENT_METHOD as method, hp.HINVOICE_ID as invoice_id
            FROM RAH_HOME_PAYMENT hp
            JOIN RAH_HOME_INVOICE hi ON hp.HINVOICE_ID = hi.HINVOICE_ID
            JOIN RAH_HOME_POLICY hpol ON hi.HPOLICY_ID = hpol.HPOLICY_ID
            WHERE hpol.CUST_ID = %s)
            UNION ALL
-           (SELECT 'Auto' as type, APAYMENT_ID as id, APAYMENT_DT as pay_date,
-            APAYMENT_AMT as amount, APAYMENT_METHOD as method, AINVOICE_ID as invoice_id
+           (SELECT 'Auto' as type, ap.APAYMENT_ID as id, ap.APAYMENT_DT as pay_date,
+            ap.APAYMENT_AMT as amount, ap.APAYMENT_METHOD as method, ap.AINVOICE_ID as invoice_id
            FROM RAH_AUTO_PAYMENT ap
            JOIN RAH_AUTO_INVOICE ai ON ap.AINVOICE_ID = ai.AINVOICE_ID
            JOIN RAH_AUTO_POLICY apol ON ai.APOLICY_ID = apol.APOLICY_ID
@@ -1374,12 +1374,16 @@ def employee_index_analysis():
 @login_required
 def api_premium_by_month():
     data = execute_query(
-        """(SELECT DATE_FORMAT(HPOLICY_START_DT, '%%Y-%%m') as month, SUM(HPREMIUM_AMT) as total, 'Home' as type
-           FROM RAH_HOME_POLICY GROUP BY month)
+        """(SELECT DATE_FORMAT(HPOLICY_START_DT, '%b %Y') as month,
+               DATE_FORMAT(HPOLICY_START_DT, '%Y-%m') as month_key,
+               SUM(HPREMIUM_AMT) as total, 'Home' as type
+           FROM RAH_HOME_POLICY WHERE HPOLICY_START_DT IS NOT NULL GROUP BY month_key, month)
            UNION ALL
-           (SELECT DATE_FORMAT(APOLICY_START_DT, '%%Y-%%m') as month, SUM(APREMIUM_AMT) as total, 'Auto' as type
-           FROM RAH_AUTO_POLICY GROUP BY month)
-           ORDER BY month""",
+           (SELECT DATE_FORMAT(APOLICY_START_DT, '%b %Y') as month,
+               DATE_FORMAT(APOLICY_START_DT, '%Y-%m') as month_key,
+               SUM(APREMIUM_AMT) as total, 'Auto' as type
+           FROM RAH_AUTO_POLICY WHERE APOLICY_START_DT IS NOT NULL GROUP BY month_key, month)
+           ORDER BY month_key""",
         fetchall=True
     )
     return jsonify([{k: float(v) if isinstance(v, Decimal) else v for k, v in row.items()} for row in data])
