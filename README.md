@@ -9,25 +9,31 @@ A full-stack insurance management web application built with Flask + MySQL + Boo
 
 ## Prerequisites
 
-- **Python 3.8+**
-- **MySQL 8.0+** (running locally)
-- **pip** (Python package manager)
+- **Conda** (Miniconda or Anaconda) — for the Python environment
+- **Homebrew** — for MySQL on macOS
+- **MySQL 9.x** (installed via Homebrew)
 
 ## Quick Setup
 
-### 1. Install Python Dependencies
+### 1. Create Conda Environment & Install Python Dependencies
 
 ```bash
-cd nice_insurance_app
+conda create -n dbmsProj python=3.11 -y
+conda activate dbmsProj
 pip install -r requirements.txt
 ```
 
-### 2. Set Up the Database
-
-Make sure MySQL is running, then execute the setup SQL:
+### 2. Install & Start MySQL (macOS via Homebrew)
 
 ```bash
-mysql -u root -p < setup_database.sql
+brew install mysql
+brew services start mysql   # starts now and auto-starts on login
+```
+
+### 3. Set Up the Database
+
+```bash
+mysql -uroot < setup_database.sql
 ```
 
 This creates the `nice_insurance` database with:
@@ -39,14 +45,14 @@ This creates the `nice_insurance` database with:
 - Sample data (15+ rows per table)
 - Pre-configured user accounts
 
-### 3. Configure Database Connection
+### 4. Configure Database Connection
 
-Edit `config.py` if your MySQL credentials differ from defaults:
+The default `config.py` works out of the box with a Homebrew MySQL install (no root password). Edit it only if your credentials differ:
 
 ```python
 MYSQL_HOST = 'localhost'
 MYSQL_USER = 'root'
-MYSQL_PASSWORD = ''  # Set your MySQL root password here
+MYSQL_PASSWORD = ''  # default for Homebrew MySQL
 MYSQL_DATABASE = 'nice_insurance'
 MYSQL_PORT = 3306
 ```
@@ -56,13 +62,16 @@ Or use environment variables:
 export MYSQL_PASSWORD='yourpassword'
 ```
 
-### 4. Run the Application
+### 5. Run the Application
 
 ```bash
+conda activate dbmsProj
 python app.py
 ```
 
-The app starts at **http://localhost:5000**
+The app starts at **http://localhost:8080**
+
+> **Note:** Port 8080 is used instead of 5000 because macOS reserves port 5000 for AirPlay Receiver (Control Center). You can override the port with `PORT=5001 python app.py` if needed.
 
 ## Default Credentials
 
