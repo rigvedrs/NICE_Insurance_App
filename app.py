@@ -1506,13 +1506,13 @@ def api_customer_payments():
     cust_id = session['cust_id']
     data = execute_query(
         """SELECT month, SUM(amount) as total FROM (
-           (SELECT DATE_FORMAT(hp.HPAYMENT_DT, '%%Y-%%m') as month, hp.HPAYMENT_AMT as amount
+           (SELECT DATE_FORMAT(hp.HPAYMENT_DT, '%Y-%m') as month, hp.HPAYMENT_AMT as amount
             FROM RAH_HOME_PAYMENT hp
             JOIN RAH_HOME_INVOICE hi ON hp.HINVOICE_ID = hi.HINVOICE_ID
             JOIN RAH_HOME_POLICY hpol ON hi.HPOLICY_ID = hpol.HPOLICY_ID
             WHERE hpol.CUST_ID = %s)
            UNION ALL
-           (SELECT DATE_FORMAT(ap.APAYMENT_DT, '%%Y-%%m') as month, ap.APAYMENT_AMT as amount
+           (SELECT DATE_FORMAT(ap.APAYMENT_DT, '%Y-%m') as month, ap.APAYMENT_AMT as amount
             FROM RAH_AUTO_PAYMENT ap
             JOIN RAH_AUTO_INVOICE ai ON ap.AINVOICE_ID = ai.AINVOICE_ID
             JOIN RAH_AUTO_POLICY apol ON ai.APOLICY_ID = apol.APOLICY_ID
