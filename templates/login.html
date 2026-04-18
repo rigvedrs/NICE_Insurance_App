@@ -1,98 +1,145 @@
 {% extends "base.html" %}
-{% block title %}Login - NICE Insurance{% endblock %}
+{% block title %}Sign in · NICE Insurance{% endblock %}
 
-{% block content %}
-<div class="auth-container">
-    <div class="card auth-card shadow">
-        <div class="card-header">
-            <svg class="mb-2" width="48" height="48" viewBox="0 0 32 32" fill="none">
-                <rect width="32" height="32" rx="6" fill="white" fill-opacity="0.2"/>
-                <path d="M8 22V10l8-4 8 4v12l-8 4-8-4z" stroke="white" stroke-width="1.5" fill="none"/>
-                <path d="M16 6v20M8 10l8 4 8-4" stroke="white" stroke-width="1.5" fill="none"/>
-            </svg>
-            <h3>Welcome Back</h3>
-            <p>Sign in to your NICE Insurance account</p>
+{% block body_content %}
+<div class="auth-shell">
+    <!-- Left: Brand panel -->
+    <aside class="auth-brand">
+        <div>
+            <a href="/" class="brand-logo" style="color:#fff; text-decoration:none;">
+                <svg width="30" height="30" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+                    <rect width="32" height="32" rx="8" fill="rgba(255,255,255,0.18)"/>
+                    <path d="M8 22V10l8-4 8 4v12l-8 4-8-4z" stroke="#fff" stroke-width="1.6" fill="none" stroke-linejoin="round"/>
+                    <path d="M16 6v20M8 10l8 4 8-4" stroke="#fff" stroke-width="1.6" fill="none" stroke-linejoin="round"/>
+                </svg>
+                NICE Insurance
+            </a>
         </div>
-        <div class="card-body p-4">
+
+        <div>
+            <h1>Secure coverage. Beautifully simple.</h1>
+            <p>Manage your home and auto policies, review invoices, and make payments — all from one streamlined dashboard built for the way you work.</p>
+
+            <div class="mb-3">
+                <span class="feature-pill"><i class="bi bi-shield-check"></i>Bank-grade security</span>
+                <span class="feature-pill"><i class="bi bi-graph-up"></i>Real-time insights</span>
+                <span class="feature-pill"><i class="bi bi-lightning-charge-fill"></i>Lightning fast</span>
+            </div>
+        </div>
+
+        <footer>
+            &copy; 2026 NICE Insurance · NYU CS-GY 6083
+        </footer>
+    </aside>
+
+    <!-- Right: Form panel -->
+    <section class="auth-form-wrap">
+        <div class="auth-form-inner">
+            <!-- Flash messages (inline for auth page since toast area may be covered) -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% for category, message in messages %}
+            <div class="alert alert-{{ category }} alert-dismissible fade show mb-3" role="alert">
+                <i class="bi {% if category == 'success' %}bi-check-circle-fill{% elif category == 'danger' %}bi-exclamation-triangle-fill{% elif category == 'warning' %}bi-exclamation-circle-fill{% else %}bi-info-circle-fill{% endif %}"></i>
+                <span class="flex-grow-1">{{ message }}</span>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            {% endfor %}
+            {% endwith %}
+
             <!-- Login Form -->
             <div id="loginForm" {% if show_reset %}style="display:none"{% endif %}>
+                <div class="form-heading">
+                    <span class="eyebrow">Welcome back</span>
+                    <h2>Sign in to your account</h2>
+                    <p class="subtitle">Enter your credentials to continue.</p>
+                </div>
+
                 <form method="POST" action="{{ url_for('login') }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="mb-3">
-                        <label class="form-label"><i class="bi bi-person me-1"></i>Username</label>
-                        <input type="text" name="username" class="form-control form-control-lg" placeholder="Enter username" required autofocus>
+                        <label class="form-label"><i class="bi bi-person"></i>Username</label>
+                        <input type="text" name="username" class="form-control form-control-lg" placeholder="e.g. customer1" required autofocus autocomplete="username">
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label"><i class="bi bi-lock me-1"></i>Password</label>
+                    <div class="mb-2">
+                        <label class="form-label"><i class="bi bi-lock"></i>Password</label>
                         <div class="input-group">
-                            <input type="password" name="password" id="loginPassword" class="form-control form-control-lg" placeholder="Enter password" required>
-                            <button class="btn btn-outline-secondary" type="button" onclick="togglePassword('loginPassword', this)">
+                            <input type="password" name="password" id="loginPassword" class="form-control form-control-lg" placeholder="Enter password" required autocomplete="current-password">
+                            <button class="btn btn-outline-secondary" type="button" onclick="togglePassword('loginPassword', this)" aria-label="Show password">
                                 <i class="bi bi-eye"></i>
                             </button>
                         </div>
                     </div>
-                    <button type="submit" class="btn btn-primary btn-lg w-100 mb-3">
-                        <i class="bi bi-box-arrow-in-right me-1"></i>Sign In
+                    <div class="text-end mb-3">
+                        <a href="#" onclick="showReset(); return false;" class="small">Forgot password?</a>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-lg w-100">
+                        <span>Sign in</span>
+                        <i class="bi bi-arrow-right"></i>
                     </button>
                 </form>
-                <div class="text-center">
-                    <a href="#" onclick="showReset()" class="text-decoration-none small">Forgot Password?</a>
-                    <hr>
-                    <p class="mb-0 small">Don't have an account? <a href="{{ url_for('register') }}" class="text-decoration-none fw-bold">Register here</a></p>
+
+                <hr class="divider-gradient">
+                <p class="text-center small text-muted mb-0">
+                    Don't have an account?
+                    <a href="{{ url_for('register') }}" class="fw-semibold">Create one</a>
+                </p>
+
+                <div class="demo-card mt-4">
+                    <h6><i class="bi bi-info-circle me-1"></i>Demo credentials</h6>
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <div class="fw-semibold small text-primary mb-1">Employee</div>
+                            <code>employee1 / password123</code>
+                        </div>
+                        <div class="col-6">
+                            <div class="fw-semibold small text-primary mb-1">Customer</div>
+                            <code class="d-block mb-1">customer1 / password123</code>
+                            <code class="d-block">customer2 / password123</code>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             <!-- Reset Password Form -->
             <div id="resetForm" {% if not show_reset %}style="display:none"{% endif %}>
-                <h5 class="mb-3"><i class="bi bi-key me-1"></i>Reset Password</h5>
+                <div class="form-heading">
+                    <span class="eyebrow">Account recovery</span>
+                    <h2>Reset your password</h2>
+                    <p class="subtitle">Verify your identity using your security question.</p>
+                </div>
+
                 <form method="POST" action="{{ url_for('reset_password') }}" id="resetFormEl">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="mb-3">
-                        <label class="form-label">Username</label>
+                        <label class="form-label"><i class="bi bi-person"></i>Username</label>
                         <div class="input-group">
                             <input type="text" name="username" id="resetUsername" class="form-control" placeholder="Enter your username" required>
                             <button class="btn btn-outline-primary" type="button" onclick="fetchSecurityQuestion()">
-                                <i class="bi bi-search"></i> Lookup
+                                <i class="bi bi-search"></i>Lookup
                             </button>
                         </div>
                     </div>
                     <div id="securityQuestionDiv" class="mb-3" style="display:none">
-                        <label class="form-label">Security Question</label>
-                        <p id="securityQuestionText" class="fw-bold text-primary mb-2"></p>
+                        <label class="form-label"><i class="bi bi-shield-lock"></i>Security question</label>
+                        <p id="securityQuestionText" class="fw-semibold text-primary mb-2 small"></p>
                         <input type="text" name="security_answer" class="form-control" placeholder="Your answer" required>
                     </div>
                     <div id="newPasswordDiv" class="mb-3" style="display:none">
-                        <label class="form-label">New Password</label>
+                        <label class="form-label"><i class="bi bi-key"></i>New password</label>
                         <input type="password" name="new_password" class="form-control" placeholder="Enter new password" minlength="6">
                     </div>
-                    <button type="submit" id="resetBtn" class="btn btn-primary w-100 mb-3" style="display:none">
-                        <i class="bi bi-check-circle me-1"></i>Reset Password
+                    <button type="submit" id="resetBtn" class="btn btn-primary w-100" style="display:none">
+                        <i class="bi bi-check-circle"></i>Reset password
                     </button>
                 </form>
-                <div class="text-center">
-                    <a href="#" onclick="showLogin()" class="text-decoration-none small"><i class="bi bi-arrow-left me-1"></i>Back to Login</a>
-                </div>
-            </div>
-        </div>
-    </div>
 
-    <!-- Demo credentials -->
-    <div class="card mt-3 border-0 bg-light">
-        <div class="card-body small">
-            <h6 class="card-title"><i class="bi bi-info-circle me-1"></i>Demo Credentials</h6>
-            <div class="row">
-                <div class="col-6">
-                    <strong>Employee:</strong><br>
-                    <code>employee1 / password123</code>
-                </div>
-                <div class="col-6">
-                    <strong>Customer:</strong><br>
-                    <code>customer1 / password123</code><br>
-                    <code>customer2 / password123</code>
-                </div>
+                <hr class="divider-gradient">
+                <p class="text-center small mb-0">
+                    <a href="#" onclick="showLogin(); return false;"><i class="bi bi-arrow-left me-1"></i>Back to sign in</a>
+                </p>
             </div>
         </div>
-    </div>
+    </section>
 </div>
 {% endblock %}
 

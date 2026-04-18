@@ -1,53 +1,64 @@
 {% extends "base.html" %}
-{% block title %}Register - NICE Insurance{% endblock %}
+{% block title %}Create account · NICE Insurance{% endblock %}
 
 {% block content %}
-<div class="auth-container" style="max-width:600px">
-    <div class="card auth-card shadow">
-        <div class="card-header">
-            <h3>Create Account</h3>
-            <p>Join NICE Insurance today</p>
-        </div>
-        <div class="card-body p-4">
+<div class="register-wrap" style="max-width: 760px; margin: 0 auto;">
+    <!-- Hero -->
+    <div class="text-center mb-4">
+        <span class="eyebrow" style="display:inline-block; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.12em; font-weight:600; color:var(--nyu-ultra-violet); margin-bottom:0.6rem;">Join NICE Insurance</span>
+        <h1 style="font-size:2rem; font-weight:700; letter-spacing:-0.03em; margin:0 0 0.4rem;">Create your account</h1>
+        <p class="text-muted" style="font-size:0.95rem;">Takes about a minute &middot; Your data is protected end-to-end.</p>
+    </div>
+
+    <div class="card shadow">
+        <div class="card-body p-4 p-md-5">
             <form method="POST" action="{{ url_for('register') }}" id="registerForm">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-                <h6 class="text-muted mb-3"><i class="bi bi-person-plus me-1"></i>Account Information</h6>
+                <!-- Section: Account -->
+                <div class="d-flex align-items-center gap-2 mb-3">
+                    <span class="chip"><i class="bi bi-person-plus"></i>Account</span>
+                    <hr class="flex-grow-1" style="border-color: var(--border-subtle);">
+                </div>
                 <div class="row g-3 mb-3">
                     <div class="col-md-6">
                         <label class="form-label">Username <span class="text-danger">*</span></label>
-                        <input type="text" name="username" class="form-control" minlength="3" required>
+                        <input type="text" name="username" class="form-control" minlength="3" required placeholder="e.g. janedoe">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label">Email <span class="text-danger">*</span></label>
-                        <input type="email" name="email" class="form-control" required>
+                        <input type="email" name="email" class="form-control" required placeholder="you@example.com">
                     </div>
                 </div>
                 <div class="row g-3 mb-3">
                     <div class="col-md-6">
                         <label class="form-label">Password <span class="text-danger">*</span></label>
-                        <input type="password" name="password" id="regPassword" class="form-control" minlength="6" required oninput="checkPasswordStrength(this.value)">
+                        <input type="password" name="password" id="regPassword" class="form-control" minlength="6" required oninput="checkPasswordStrength(this.value)" placeholder="At least 6 characters">
                         <div class="password-strength" id="pwStrength"></div>
                         <small id="pwStrengthText" class="text-muted"></small>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label">Confirm Password <span class="text-danger">*</span></label>
-                        <input type="password" name="confirm_password" id="regConfirm" class="form-control" required>
-                        <small id="pwMatch" class="text-danger" style="display:none">Passwords do not match</small>
+                        <label class="form-label">Confirm password <span class="text-danger">*</span></label>
+                        <input type="password" name="confirm_password" id="regConfirm" class="form-control" required placeholder="Repeat password">
+                        <small id="pwMatch" class="text-danger" style="display:none"><i class="bi bi-exclamation-circle me-1"></i>Passwords do not match</small>
                     </div>
                 </div>
-                <div class="mb-3">
+                <div class="mb-4">
                     <label class="form-label">Role <span class="text-danger">*</span></label>
                     <select name="role" id="roleSelect" class="form-select" onchange="toggleCustomerFields()">
-                        <option value="customer">Customer</option>
-                        <option value="employee">Employee</option>
+                        <option value="customer">Customer — manage my policies</option>
+                        <option value="employee">Employee — internal access</option>
                     </select>
                 </div>
 
-                <h6 class="text-muted mb-3"><i class="bi bi-shield-lock me-1"></i>Security</h6>
-                <div class="row g-3 mb-3">
+                <!-- Section: Security -->
+                <div class="d-flex align-items-center gap-2 mb-3">
+                    <span class="chip"><i class="bi bi-shield-lock"></i>Security</span>
+                    <hr class="flex-grow-1" style="border-color: var(--border-subtle);">
+                </div>
+                <div class="row g-3 mb-4">
                     <div class="col-md-6">
-                        <label class="form-label">Security Question <span class="text-danger">*</span></label>
+                        <label class="form-label">Security question <span class="text-danger">*</span></label>
                         <select name="security_question" class="form-select" required>
                             <option value="What is your pet name?">What is your pet name?</option>
                             <option value="What city were you born in?">What city were you born in?</option>
@@ -57,26 +68,28 @@
                         </select>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label">Security Answer <span class="text-danger">*</span></label>
-                        <input type="text" name="security_answer" class="form-control" required>
+                        <label class="form-label">Security answer <span class="text-danger">*</span></label>
+                        <input type="text" name="security_answer" class="form-control" required placeholder="Used only for recovery">
                     </div>
                 </div>
 
-                <!-- Customer-specific fields -->
+                <!-- Section: Personal (customer only) -->
                 <div id="customerFields">
-                    <hr>
-                    <h6 class="text-muted mb-3"><i class="bi bi-person-vcard me-1"></i>Personal Information</h6>
+                    <div class="d-flex align-items-center gap-2 mb-3">
+                        <span class="chip"><i class="bi bi-person-vcard"></i>Personal information</span>
+                        <hr class="flex-grow-1" style="border-color: var(--border-subtle);">
+                    </div>
                     <div class="row g-3 mb-3">
                         <div class="col-md-4">
-                            <label class="form-label">First Name <span class="text-danger">*</span></label>
+                            <label class="form-label">First name <span class="text-danger">*</span></label>
                             <input type="text" name="first_name" class="form-control cust-field">
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label">Middle Name</label>
+                            <label class="form-label">Middle name</label>
                             <input type="text" name="middle_name" class="form-control">
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label">Last Name <span class="text-danger">*</span></label>
+                            <label class="form-label">Last name <span class="text-danger">*</span></label>
                             <input type="text" name="last_name" class="form-control cust-field">
                         </div>
                     </div>
@@ -84,13 +97,13 @@
                         <div class="col-md-6">
                             <label class="form-label">Gender</label>
                             <select name="gender" class="form-select">
-                                <option value="">--</option>
+                                <option value="">Prefer not to say</option>
                                 <option value="M">Male</option>
                                 <option value="F">Female</option>
                             </select>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label">Marital Status <span class="text-danger">*</span></label>
+                            <label class="form-label">Marital status <span class="text-danger">*</span></label>
                             <select name="marital_status" class="form-select">
                                 <option value="S">Single</option>
                                 <option value="M">Married</option>
@@ -100,15 +113,15 @@
                     </div>
                     <div class="row g-3 mb-3">
                         <div class="col-md-8">
-                            <label class="form-label">Address Line 1 <span class="text-danger">*</span></label>
-                            <input type="text" name="addr_line1" class="form-control cust-field">
+                            <label class="form-label">Address line 1 <span class="text-danger">*</span></label>
+                            <input type="text" name="addr_line1" class="form-control cust-field" placeholder="Street address">
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label">Address Line 2</label>
-                            <input type="text" name="addr_line2" class="form-control">
+                            <label class="form-label">Address line 2</label>
+                            <input type="text" name="addr_line2" class="form-control" placeholder="Apt, suite">
                         </div>
                     </div>
-                    <div class="row g-3 mb-3">
+                    <div class="row g-3 mb-4">
                         <div class="col-md-5">
                             <label class="form-label">City <span class="text-danger">*</span></label>
                             <input type="text" name="city" class="form-control cust-field">
@@ -119,18 +132,20 @@
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">ZIP <span class="text-danger">*</span></label>
-                            <input type="text" name="zip" class="form-control cust-field" maxlength="5" pattern="[0-9]{5}">
+                            <input type="text" name="zip" class="form-control cust-field" maxlength="5" pattern="[0-9]{5}" placeholder="10003">
                         </div>
                     </div>
                 </div>
 
-                <button type="submit" class="btn btn-primary btn-lg w-100 mt-3">
-                    <i class="bi bi-person-plus me-1"></i>Create Account
+                <button type="submit" class="btn btn-primary btn-lg w-100">
+                    <i class="bi bi-person-check"></i>Create account
                 </button>
             </form>
-            <div class="text-center mt-3">
-                <p class="mb-0 small">Already have an account? <a href="{{ url_for('login') }}" class="text-decoration-none fw-bold">Sign in</a></p>
-            </div>
+
+            <hr class="divider-gradient">
+            <p class="text-center text-muted mb-0 small">
+                Already have an account? <a href="{{ url_for('login') }}" class="fw-semibold">Sign in</a>
+            </p>
         </div>
     </div>
 </div>
@@ -162,10 +177,10 @@ function checkPasswordStrength(pw) {
     if (/[^A-Za-z0-9]/.test(pw)) strength++;
 
     bar.className = 'password-strength';
-    if (strength <= 1) { bar.classList.add('weak'); txt.textContent = 'Weak'; }
+    if (strength <= 1) { bar.classList.add('weak');   txt.textContent = 'Weak password'; }
     else if (strength === 2) { bar.classList.add('fair'); txt.textContent = 'Fair'; }
     else if (strength === 3) { bar.classList.add('good'); txt.textContent = 'Good'; }
-    else { bar.classList.add('strong'); txt.textContent = 'Strong'; }
+    else { bar.classList.add('strong'); txt.textContent = 'Strong password'; }
 }
 
 document.getElementById('regConfirm').addEventListener('input', function() {
@@ -174,7 +189,6 @@ document.getElementById('regConfirm').addEventListener('input', function() {
     match.style.display = this.value && this.value !== pw ? 'block' : 'none';
 });
 
-// Init
 toggleCustomerFields();
 </script>
 {% endblock %}
