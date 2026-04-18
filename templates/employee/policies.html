@@ -60,7 +60,7 @@
                         <td><span class="badge {% if p.HPOLICY_STATUS == 'C' %}badge-active{% else %}badge-expired{% endif %}">{{ 'Active' if p.HPOLICY_STATUS == 'C' else 'Expired' }}</span></td>
                         <td>{% if p.HOME_TYPE %}{% if p.HOME_TYPE == 'S' %}Single{% elif p.HOME_TYPE == 'M' %}Multi{% elif p.HOME_TYPE == 'C' %}Condo{% else %}Town{% endif %}{% else %}-{% endif %}</td>
                         <td>
-                            <button class="btn btn-sm btn-outline-primary" onclick='openEditPolicy("home", {{ p.HPOLICY_ID }}, "{{ p.HPOLICY_START_DT }}", "{{ p.HPOLICY_END_DT }}", {{ p.HPREMIUM_AMT }}, "{{ p.HPOLICY_STATUS }}")' title="Edit"><i class="bi bi-pencil"></i></button>
+                            <button class="btn btn-sm btn-outline-primary" onclick='openEditPolicy("home", {{ p.HPOLICY_ID }}, "{{ p.HPOLICY_START_DT }}", "{{ p.HPOLICY_END_DT }}", {{ p.HPREMIUM_AMT }}, "{{ p.HPOLICY_STATUS }}", "{{ p.HOME_TYPE or "S" }}")' title="Edit"><i class="bi bi-pencil"></i></button>
                             <button class="btn btn-sm btn-outline-success" onclick='openRenewPolicy("home", {{ p.HPOLICY_ID }})' title="Renew"><i class="bi bi-arrow-repeat"></i></button>
                             <form method="POST" action="{{ url_for('employee_delete_policy', policy_type='home', policy_id=p.HPOLICY_ID) }}" class="d-inline" onsubmit="return confirm('Delete this policy and all related data?')">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -76,7 +76,7 @@
                         <td><span class="badge {% if p.APOLICY_STATUS == 'C' %}badge-active{% else %}badge-expired{% endif %}">{{ 'Active' if p.APOLICY_STATUS == 'C' else 'Expired' }}</span></td>
                         <td><span class="badge bg-info">{{ p.vehicle_count }}</span></td>
                         <td>
-                            <button class="btn btn-sm btn-outline-primary" onclick='openEditPolicy("auto", {{ p.APOLICY_ID }}, "{{ p.APOLICY_START_DT }}", "{{ p.APOLICY_END_DT }}", {{ p.APREMIUM_AMT }}, "{{ p.APOLICY_STATUS }}")' title="Edit"><i class="bi bi-pencil"></i></button>
+                            <button class="btn btn-sm btn-outline-primary" onclick='openEditPolicy("auto", {{ p.APOLICY_ID }}, "{{ p.APOLICY_START_DT }}", "{{ p.APOLICY_END_DT }}", {{ p.APREMIUM_AMT }}, "{{ p.APOLICY_STATUS }}", "")' title="Edit"><i class="bi bi-pencil"></i></button>
                             <button class="btn btn-sm btn-outline-success" onclick='openRenewPolicy("auto", {{ p.APOLICY_ID }})' title="Renew"><i class="bi bi-arrow-repeat"></i></button>
                             <form method="POST" action="{{ url_for('employee_delete_policy', policy_type='auto', policy_id=p.APOLICY_ID) }}" class="d-inline" onsubmit="return confirm('Delete this policy and all related data?')">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -104,9 +104,18 @@
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label">Policy Type *</label>
-                        <select name="policy_type" class="form-select" required>
+                        <select name="policy_type" id="add_policy_type" class="form-select" required onchange="toggleAddHomeFields()">
                             <option value="home" {% if policy_type == 'home' %}selected{% endif %}>Home</option>
                             <option value="auto" {% if policy_type == 'auto' %}selected{% endif %}>Auto</option>
+                        </select>
+                    </div>
+                    <div class="mb-3" id="addHomeFields" style="display:none;">
+                        <label class="form-label">Home type *</label>
+                        <select name="home_type" id="add_home_type" class="form-select">
+                            <option value="S">Single family</option>
+                            <option value="M">Multi family</option>
+                            <option value="C">Condo</option>
+                            <option value="T">Townhouse</option>
                         </select>
                     </div>
                     <div class="mb-3">
@@ -163,6 +172,15 @@
                         <div class="col-md-6"><label class="form-label">Premium ($)</label><input type="number" name="premium" id="ep_premium" class="form-control" step="0.01" required></div>
                         <div class="col-md-6"><label class="form-label">Status</label><select name="status" id="ep_status" class="form-select"><option value="C">Active</option><option value="E">Expired</option></select></div>
                     </div>
+                    <div class="mt-3" id="ep_home_section" style="display:none;">
+                        <label class="form-label">Home type</label>
+                        <select name="home_type" id="ep_home_type" class="form-select">
+                            <option value="S">Single family</option>
+                            <option value="M">Multi family</option>
+                            <option value="C">Condo</option>
+                            <option value="T">Townhouse</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -200,12 +218,35 @@
 
 {% block extra_js %}
 <script>
-function openEditPolicy(type, id, start, end, premium, status) {
+function toggleAddHomeFields() {
+    const pt = document.getElementById('add_policy_type').value;
+    const block = document.getElementById('addHomeFields');
+    const ht = document.getElementById('add_home_type');
+    if (pt === 'home') {
+        block.style.display = 'block';
+        ht.required = true;
+    } else {
+        block.style.display = 'none';
+        ht.required = false;
+    }
+}
+document.addEventListener('DOMContentLoaded', toggleAddHomeFields);
+
+function openEditPolicy(type, id, start, end, premium, status, homeType) {
     document.getElementById('editPolicyForm').action = '/employee/policies/edit/' + type + '/' + id;
     document.getElementById('ep_start').value = start;
     document.getElementById('ep_end').value = end;
     document.getElementById('ep_premium').value = premium;
     document.getElementById('ep_status').value = status;
+    const homeSection = document.getElementById('ep_home_section');
+    const homeSelect = document.getElementById('ep_home_type');
+    if (type === 'home') {
+        homeSection.style.display = 'block';
+        const allowed = { S: 1, M: 1, C: 1, T: 1 };
+        homeSelect.value = (homeType && allowed[homeType]) ? homeType : 'S';
+    } else {
+        homeSection.style.display = 'none';
+    }
     new bootstrap.Modal(document.getElementById('editPolicyModal')).show();
 }
 

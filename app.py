@@ -995,11 +995,30 @@ def employee_add_policy():
 
     try:
         if policy_type == 'home':
+            home_type = request.form.get('home_type', 'S')
+            if home_type not in ('S', 'M', 'C', 'T'):
+                home_type = 'S'
             max_id = execute_query("SELECT COALESCE(MAX(HPOLICY_ID), 0)+1 AS nid FROM RAH_HOME_POLICY", fetchone=True)
+            new_hpolicy_id = max_id['nid']
             execute_query(
                 """INSERT INTO RAH_HOME_POLICY (HPOLICY_ID, HPOLICY_START_DT, HPOLICY_END_DT,
                    HPREMIUM_AMT, HPOLICY_STATUS, CUST_ID) VALUES (%s,%s,%s,%s,%s,%s)""",
-                (max_id['nid'], start_dt, end_dt, premium, status, cust_id), commit=True
+                (new_hpolicy_id, start_dt, end_dt, premium, status, cust_id), commit=True
+            )
+            max_home = execute_query("SELECT COALESCE(MAX(HOME_ID), 0)+1 AS nid FROM RAH_HOME", fetchone=True)
+            execute_query(
+                """INSERT INTO RAH_HOME (HOME_ID, HOME_PURCHASE_DT, HOME_PURCHASE_VAL, HOME_AREA_SQFT,
+                   HOME_TYPE, AUTO_FIRE_NOTIF, HOME_SECURITY_SYS, SWIMMING_POOL, BASEMENT, HPOLICY_ID)
+                   VALUES (%s, %s, %s, %s, %s, 0, 0, NULL, 0, %s)""",
+                (
+                    max_home['nid'],
+                    start_dt,
+                    250000.00,
+                    1500.00,
+                    home_type,
+                    new_hpolicy_id,
+                ),
+                commit=True,
             )
             # Ensure customer type exists
             existing = execute_query(
@@ -1042,6 +1061,34 @@ def employee_edit_policy(policy_type, policy_id):
                    HPREMIUM_AMT=%s, HPOLICY_STATUS=%s WHERE HPOLICY_ID=%s""",
                 (start_dt, end_dt, premium, status, policy_id), commit=True
             )
+            home_type = request.form.get('home_type', 'S')
+            if home_type not in ('S', 'M', 'C', 'T'):
+                home_type = 'S'
+            row = execute_query(
+                "SELECT HOME_ID FROM RAH_HOME WHERE HPOLICY_ID = %s", (policy_id,), fetchone=True
+            )
+            if row:
+                execute_query(
+                    "UPDATE RAH_HOME SET HOME_TYPE=%s WHERE HPOLICY_ID=%s",
+                    (home_type, policy_id),
+                    commit=True,
+                )
+            else:
+                max_home = execute_query("SELECT COALESCE(MAX(HOME_ID), 0)+1 AS nid FROM RAH_HOME", fetchone=True)
+                execute_query(
+                    """INSERT INTO RAH_HOME (HOME_ID, HOME_PURCHASE_DT, HOME_PURCHASE_VAL, HOME_AREA_SQFT,
+                       HOME_TYPE, AUTO_FIRE_NOTIF, HOME_SECURITY_SYS, SWIMMING_POOL, BASEMENT, HPOLICY_ID)
+                       VALUES (%s, %s, %s, %s, %s, 0, 0, NULL, 0, %s)""",
+                    (
+                        max_home['nid'],
+                        start_dt,
+                        250000.00,
+                        1500.00,
+                        home_type,
+                        policy_id,
+                    ),
+                    commit=True,
+                )
         else:
             execute_query(
                 """UPDATE RAH_AUTO_POLICY SET APOLICY_START_DT=%s, APOLICY_END_DT=%s,
@@ -1091,18 +1138,34 @@ def employee_renew_policy(policy_type, policy_id):
 @employee_required
 def employee_invoices():
     inv_type = request.args.get('type', 'home')
+    search = request.args.get('search', '').strip()
+    sp = f"%{search}%" if search else None
 
     if inv_type == 'home':
-        invoices = execute_query(
-            """SELECT hi.*, hp.CUST_ID, c.FIRST_NAME, c.LAST_NAME,
-               COALESCE(SUM(hpay.HPAYMENT_AMT), 0) as paid_amount
-               FROM RAH_HOME_INVOICE hi
-               JOIN RAH_HOME_POLICY hp ON hi.HPOLICY_ID = hp.HPOLICY_ID
-               JOIN RAH_CUSTOMER c ON hp.CUST_ID = c.CUST_ID
-               LEFT JOIN RAH_HOME_PAYMENT hpay ON hi.HINVOICE_ID = hpay.HINVOICE_ID
-               GROUP BY hi.HINVOICE_ID ORDER BY hi.HINVOICE_DT DESC""",
-            fetchall=True
-        )
+        if search:
+            invoices = execute_query(
+                """SELECT hi.*, hp.CUST_ID, c.FIRST_NAME, c.LAST_NAME,
+                   COALESCE(SUM(hpay.HPAYMENT_AMT), 0) as paid_amount
+                   FROM RAH_HOME_INVOICE hi
+                   JOIN RAH_HOME_POLICY hp ON hi.HPOLICY_ID = hp.HPOLICY_ID
+                   JOIN RAH_CUSTOMER c ON hp.CUST_ID = c.CUST_ID
+                   LEFT JOIN RAH_HOME_PAYMENT hpay ON hi.HINVOICE_ID = hpay.HINVOICE_ID
+                   WHERE c.FIRST_NAME LIKE %s OR c.LAST_NAME LIKE %s
+                   OR CAST(hi.HINVOICE_ID AS CHAR) LIKE %s OR CAST(hi.HPOLICY_ID AS CHAR) LIKE %s
+                   GROUP BY hi.HINVOICE_ID ORDER BY hi.HINVOICE_DT DESC""",
+                (sp, sp, sp, sp), fetchall=True
+            )
+        else:
+            invoices = execute_query(
+                """SELECT hi.*, hp.CUST_ID, c.FIRST_NAME, c.LAST_NAME,
+                   COALESCE(SUM(hpay.HPAYMENT_AMT), 0) as paid_amount
+                   FROM RAH_HOME_INVOICE hi
+                   JOIN RAH_HOME_POLICY hp ON hi.HPOLICY_ID = hp.HPOLICY_ID
+                   JOIN RAH_CUSTOMER c ON hp.CUST_ID = c.CUST_ID
+                   LEFT JOIN RAH_HOME_PAYMENT hpay ON hi.HINVOICE_ID = hpay.HINVOICE_ID
+                   GROUP BY hi.HINVOICE_ID ORDER BY hi.HINVOICE_DT DESC""",
+                fetchall=True
+            )
         policies = execute_query(
             """SELECT hp.HPOLICY_ID as id, c.FIRST_NAME, c.LAST_NAME
                FROM RAH_HOME_POLICY hp JOIN RAH_CUSTOMER c ON hp.CUST_ID = c.CUST_ID
@@ -1110,16 +1173,30 @@ def employee_invoices():
             fetchall=True
         )
     else:
-        invoices = execute_query(
-            """SELECT ai.*, ap.CUST_ID, c.FIRST_NAME, c.LAST_NAME,
-               COALESCE(SUM(apay.APAYMENT_AMT), 0) as paid_amount
-               FROM RAH_AUTO_INVOICE ai
-               JOIN RAH_AUTO_POLICY ap ON ai.APOLICY_ID = ap.APOLICY_ID
-               JOIN RAH_CUSTOMER c ON ap.CUST_ID = c.CUST_ID
-               LEFT JOIN RAH_AUTO_PAYMENT apay ON ai.AINVOICE_ID = apay.AINVOICE_ID
-               GROUP BY ai.AINVOICE_ID ORDER BY ai.AINVOICE_DT DESC""",
-            fetchall=True
-        )
+        if search:
+            invoices = execute_query(
+                """SELECT ai.*, ap.CUST_ID, c.FIRST_NAME, c.LAST_NAME,
+                   COALESCE(SUM(apay.APAYMENT_AMT), 0) as paid_amount
+                   FROM RAH_AUTO_INVOICE ai
+                   JOIN RAH_AUTO_POLICY ap ON ai.APOLICY_ID = ap.APOLICY_ID
+                   JOIN RAH_CUSTOMER c ON ap.CUST_ID = c.CUST_ID
+                   LEFT JOIN RAH_AUTO_PAYMENT apay ON ai.AINVOICE_ID = apay.AINVOICE_ID
+                   WHERE c.FIRST_NAME LIKE %s OR c.LAST_NAME LIKE %s
+                   OR CAST(ai.AINVOICE_ID AS CHAR) LIKE %s OR CAST(ai.APOLICY_ID AS CHAR) LIKE %s
+                   GROUP BY ai.AINVOICE_ID ORDER BY ai.AINVOICE_DT DESC""",
+                (sp, sp, sp, sp), fetchall=True
+            )
+        else:
+            invoices = execute_query(
+                """SELECT ai.*, ap.CUST_ID, c.FIRST_NAME, c.LAST_NAME,
+                   COALESCE(SUM(apay.APAYMENT_AMT), 0) as paid_amount
+                   FROM RAH_AUTO_INVOICE ai
+                   JOIN RAH_AUTO_POLICY ap ON ai.APOLICY_ID = ap.APOLICY_ID
+                   JOIN RAH_CUSTOMER c ON ap.CUST_ID = c.CUST_ID
+                   LEFT JOIN RAH_AUTO_PAYMENT apay ON ai.AINVOICE_ID = apay.AINVOICE_ID
+                   GROUP BY ai.AINVOICE_ID ORDER BY ai.AINVOICE_DT DESC""",
+                fetchall=True
+            )
         policies = execute_query(
             """SELECT ap.APOLICY_ID as id, c.FIRST_NAME, c.LAST_NAME
                FROM RAH_AUTO_POLICY ap JOIN RAH_CUSTOMER c ON ap.CUST_ID = c.CUST_ID
@@ -1127,7 +1204,9 @@ def employee_invoices():
             fetchall=True
         )
 
-    return render_template('employee/invoices.html', invoices=invoices, inv_type=inv_type, policies=policies)
+    return render_template(
+        'employee/invoices.html', invoices=invoices, inv_type=inv_type, policies=policies, search=search
+    )
 
 
 @app.route('/employee/invoices/add', methods=['POST'])
@@ -1152,47 +1231,96 @@ def employee_add_invoice():
 @app.route('/employee/payments')
 @employee_required
 def employee_payments():
-    payments = execute_query(
-        """(SELECT 'Home' as type, hp.HPAYMENT_ID as id, hp.HPAYMENT_DT as pay_date,
-            hp.HPAYMENT_AMT as amount, hp.HPAYMENT_METHOD as method,
-            hp.HINVOICE_ID as invoice_id, c.FIRST_NAME, c.LAST_NAME
-           FROM RAH_HOME_PAYMENT hp
-           JOIN RAH_HOME_INVOICE hi ON hp.HINVOICE_ID = hi.HINVOICE_ID
-           JOIN RAH_HOME_POLICY hpol ON hi.HPOLICY_ID = hpol.HPOLICY_ID
-           JOIN RAH_CUSTOMER c ON hpol.CUST_ID = c.CUST_ID)
-           UNION ALL
-           (SELECT 'Auto' as type, ap.APAYMENT_ID as id, ap.APAYMENT_DT as pay_date,
-            ap.APAYMENT_AMT as amount, ap.APAYMENT_METHOD as method,
-            ap.AINVOICE_ID as invoice_id, c.FIRST_NAME, c.LAST_NAME
-           FROM RAH_AUTO_PAYMENT ap
-           JOIN RAH_AUTO_INVOICE ai ON ap.AINVOICE_ID = ai.AINVOICE_ID
-           JOIN RAH_AUTO_POLICY apol ON ai.APOLICY_ID = apol.APOLICY_ID
-           JOIN RAH_CUSTOMER c ON apol.CUST_ID = c.CUST_ID)
-           ORDER BY pay_date DESC""",
-        fetchall=True
-    )
-    return render_template('employee/payments.html', payments=payments)
+    search = request.args.get('search', '').strip()
+    sp = f"%{search}%"
+    if search:
+        payments = execute_query(
+            """(SELECT 'Home' as type, hp.HPAYMENT_ID as id, hp.HPAYMENT_DT as pay_date,
+                hp.HPAYMENT_AMT as amount, hp.HPAYMENT_METHOD as method,
+                hp.HINVOICE_ID as invoice_id, c.FIRST_NAME, c.LAST_NAME
+               FROM RAH_HOME_PAYMENT hp
+               JOIN RAH_HOME_INVOICE hi ON hp.HINVOICE_ID = hi.HINVOICE_ID
+               JOIN RAH_HOME_POLICY hpol ON hi.HPOLICY_ID = hpol.HPOLICY_ID
+               JOIN RAH_CUSTOMER c ON hpol.CUST_ID = c.CUST_ID
+               WHERE c.FIRST_NAME LIKE %s OR c.LAST_NAME LIKE %s
+               OR CAST(hp.HPAYMENT_ID AS CHAR) LIKE %s OR CAST(hp.HINVOICE_ID AS CHAR) LIKE %s
+               OR hp.HPAYMENT_METHOD LIKE %s OR CAST(hp.HPAYMENT_AMT AS CHAR) LIKE %s
+               OR 'Home' LIKE %s)
+               UNION ALL
+               (SELECT 'Auto' as type, ap.APAYMENT_ID as id, ap.APAYMENT_DT as pay_date,
+                ap.APAYMENT_AMT as amount, ap.APAYMENT_METHOD as method,
+                ap.AINVOICE_ID as invoice_id, c.FIRST_NAME, c.LAST_NAME
+               FROM RAH_AUTO_PAYMENT ap
+               JOIN RAH_AUTO_INVOICE ai ON ap.AINVOICE_ID = ai.AINVOICE_ID
+               JOIN RAH_AUTO_POLICY apol ON ai.APOLICY_ID = apol.APOLICY_ID
+               JOIN RAH_CUSTOMER c ON apol.CUST_ID = c.CUST_ID
+               WHERE c.FIRST_NAME LIKE %s OR c.LAST_NAME LIKE %s
+               OR CAST(ap.APAYMENT_ID AS CHAR) LIKE %s OR CAST(ap.AINVOICE_ID AS CHAR) LIKE %s
+               OR ap.APAYMENT_METHOD LIKE %s OR CAST(ap.APAYMENT_AMT AS CHAR) LIKE %s
+               OR 'Auto' LIKE %s)
+               ORDER BY pay_date DESC""",
+            (sp, sp, sp, sp, sp, sp, sp, sp, sp, sp, sp, sp, sp, sp),
+            fetchall=True,
+        )
+    else:
+        payments = execute_query(
+            """(SELECT 'Home' as type, hp.HPAYMENT_ID as id, hp.HPAYMENT_DT as pay_date,
+                hp.HPAYMENT_AMT as amount, hp.HPAYMENT_METHOD as method,
+                hp.HINVOICE_ID as invoice_id, c.FIRST_NAME, c.LAST_NAME
+               FROM RAH_HOME_PAYMENT hp
+               JOIN RAH_HOME_INVOICE hi ON hp.HINVOICE_ID = hi.HINVOICE_ID
+               JOIN RAH_HOME_POLICY hpol ON hi.HPOLICY_ID = hpol.HPOLICY_ID
+               JOIN RAH_CUSTOMER c ON hpol.CUST_ID = c.CUST_ID)
+               UNION ALL
+               (SELECT 'Auto' as type, ap.APAYMENT_ID as id, ap.APAYMENT_DT as pay_date,
+                ap.APAYMENT_AMT as amount, ap.APAYMENT_METHOD as method,
+                ap.AINVOICE_ID as invoice_id, c.FIRST_NAME, c.LAST_NAME
+               FROM RAH_AUTO_PAYMENT ap
+               JOIN RAH_AUTO_INVOICE ai ON ap.AINVOICE_ID = ai.AINVOICE_ID
+               JOIN RAH_AUTO_POLICY apol ON ai.APOLICY_ID = apol.APOLICY_ID
+               JOIN RAH_CUSTOMER c ON apol.CUST_ID = c.CUST_ID)
+               ORDER BY pay_date DESC""",
+            fetchall=True,
+        )
+    return render_template('employee/payments.html', payments=payments, search=search)
 
 
 # ---- Employee Vehicles ----
 @app.route('/employee/vehicles', methods=['GET'])
 @employee_required
 def employee_vehicles():
-    vehicles = execute_query(
-        """SELECT v.*, ap.CUST_ID, c.FIRST_NAME, c.LAST_NAME
-           FROM RAH_VEHICLE v
-           JOIN RAH_AUTO_POLICY ap ON v.APOLICY_ID = ap.APOLICY_ID
-           JOIN RAH_CUSTOMER c ON ap.CUST_ID = c.CUST_ID
-           ORDER BY v.VEHICLE_YEAR DESC""",
-        fetchall=True
-    )
+    search = request.args.get('search', '').strip()
+    sp = f"%{search}%"
+    if search:
+        vehicles = execute_query(
+            """SELECT v.*, ap.CUST_ID, c.FIRST_NAME, c.LAST_NAME
+               FROM RAH_VEHICLE v
+               JOIN RAH_AUTO_POLICY ap ON v.APOLICY_ID = ap.APOLICY_ID
+               JOIN RAH_CUSTOMER c ON ap.CUST_ID = c.CUST_ID
+               WHERE c.FIRST_NAME LIKE %s OR c.LAST_NAME LIKE %s
+               OR v.VEHICLE_VIN LIKE %s OR v.VEHICLE_MAKE LIKE %s OR v.VEHICLE_MODEL LIKE %s
+               OR CAST(v.VEHICLE_YEAR AS CHAR) LIKE %s OR CAST(v.VEHICLE_ID AS CHAR) LIKE %s
+               OR CAST(v.APOLICY_ID AS CHAR) LIKE %s
+               ORDER BY v.VEHICLE_YEAR DESC""",
+            (sp, sp, sp, sp, sp, sp, sp, sp),
+            fetchall=True,
+        )
+    else:
+        vehicles = execute_query(
+            """SELECT v.*, ap.CUST_ID, c.FIRST_NAME, c.LAST_NAME
+               FROM RAH_VEHICLE v
+               JOIN RAH_AUTO_POLICY ap ON v.APOLICY_ID = ap.APOLICY_ID
+               JOIN RAH_CUSTOMER c ON ap.CUST_ID = c.CUST_ID
+               ORDER BY v.VEHICLE_YEAR DESC""",
+            fetchall=True,
+        )
     policies = execute_query(
         """SELECT ap.APOLICY_ID as id, c.FIRST_NAME, c.LAST_NAME
            FROM RAH_AUTO_POLICY ap JOIN RAH_CUSTOMER c ON ap.CUST_ID = c.CUST_ID
            WHERE ap.APOLICY_STATUS = 'C' ORDER BY ap.APOLICY_ID""",
         fetchall=True
     )
-    return render_template('employee/vehicles.html', vehicles=vehicles, policies=policies)
+    return render_template('employee/vehicles.html', vehicles=vehicles, policies=policies, search=search)
 
 
 @app.route('/employee/vehicles/add', methods=['POST'])
@@ -1257,16 +1385,38 @@ def employee_delete_vehicle(vehicle_id):
 @app.route('/employee/drivers', methods=['GET'])
 @employee_required
 def employee_drivers():
-    drivers = execute_query(
-        """SELECT d.*, GROUP_CONCAT(CONCAT(v.VEHICLE_MAKE, ' ', v.VEHICLE_MODEL) SEPARATOR ', ') as vehicles
-           FROM RAH_DRIVER d
-           LEFT JOIN RAH_VEHICLE_DRIVER vd ON d.DRIVER_ID = vd.DRIVER_ID
-           LEFT JOIN RAH_VEHICLE v ON vd.VEHICLE_ID = v.VEHICLE_ID
-           GROUP BY d.DRIVER_ID ORDER BY d.DRIVER_LNAME""",
-        fetchall=True
-    )
+    search = request.args.get('search', '').strip()
+    sp = f"%{search}%"
+    if search:
+        drivers = execute_query(
+            """SELECT d.*, GROUP_CONCAT(CONCAT(v.VEHICLE_MAKE, ' ', v.VEHICLE_MODEL) SEPARATOR ', ') as vehicles
+               FROM RAH_DRIVER d
+               LEFT JOIN RAH_VEHICLE_DRIVER vd ON d.DRIVER_ID = vd.DRIVER_ID
+               LEFT JOIN RAH_VEHICLE v ON vd.VEHICLE_ID = v.VEHICLE_ID
+               WHERE d.DRIVER_LICENSE_NO LIKE %s OR d.DRIVER_FNAME LIKE %s OR d.DRIVER_LNAME LIKE %s
+               OR CAST(d.DRIVER_ID AS CHAR) LIKE %s OR CAST(d.DRIVER_AGE AS CHAR) LIKE %s
+               OR EXISTS (
+                   SELECT 1 FROM RAH_VEHICLE_DRIVER vd2
+                   JOIN RAH_VEHICLE v2 ON vd2.VEHICLE_ID = v2.VEHICLE_ID
+                   WHERE vd2.DRIVER_ID = d.DRIVER_ID
+                   AND (v2.VEHICLE_VIN LIKE %s OR v2.VEHICLE_MAKE LIKE %s OR v2.VEHICLE_MODEL LIKE %s
+                        OR CAST(v2.VEHICLE_YEAR AS CHAR) LIKE %s)
+               )
+               GROUP BY d.DRIVER_ID ORDER BY d.DRIVER_LNAME""",
+            (sp, sp, sp, sp, sp, sp, sp, sp, sp),
+            fetchall=True,
+        )
+    else:
+        drivers = execute_query(
+            """SELECT d.*, GROUP_CONCAT(CONCAT(v.VEHICLE_MAKE, ' ', v.VEHICLE_MODEL) SEPARATOR ', ') as vehicles
+               FROM RAH_DRIVER d
+               LEFT JOIN RAH_VEHICLE_DRIVER vd ON d.DRIVER_ID = vd.DRIVER_ID
+               LEFT JOIN RAH_VEHICLE v ON vd.VEHICLE_ID = v.VEHICLE_ID
+               GROUP BY d.DRIVER_ID ORDER BY d.DRIVER_LNAME""",
+            fetchall=True,
+        )
     vehicles = execute_query("SELECT VEHICLE_ID, VEHICLE_MAKE, VEHICLE_MODEL, VEHICLE_YEAR FROM RAH_VEHICLE ORDER BY VEHICLE_MAKE", fetchall=True)
-    return render_template('employee/drivers.html', drivers=drivers, vehicles=vehicles)
+    return render_template('employee/drivers.html', drivers=drivers, vehicles=vehicles, search=search)
 
 
 @app.route('/employee/drivers/add', methods=['POST'])
