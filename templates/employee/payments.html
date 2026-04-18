@@ -4,7 +4,27 @@
 {% block content %}
 <div class="page-header">
     <h2><i class="bi bi-credit-card me-2"></i>All Payments</h2>
-    <span class="badge bg-primary fs-6">{{ payments|length }} total</span>
+    <span class="badge bg-primary fs-6">{% if search %}{{ payments|length }} matching{% else %}{{ payments|length }} total{% endif %}</span>
+</div>
+
+<!-- Search -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form method="GET" class="row g-2 align-items-center">
+            <div class="col-md-8">
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" name="search" class="form-control" placeholder="Customer name, payment or invoice #, method, amount, or Home/Auto..." value="{{ search or '' }}">
+                </div>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">Search</button>
+            </div>
+            <div class="col-md-2">
+                <a href="{{ url_for('employee_payments') }}" class="btn btn-outline-secondary w-100">Clear</a>
+            </div>
+        </form>
+    </div>
 </div>
 
 <div class="card">

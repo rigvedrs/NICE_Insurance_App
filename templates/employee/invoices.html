@@ -12,12 +12,33 @@
 <!-- Type Toggle -->
 <div class="mb-3">
     <div class="btn-group" role="group">
-        <a href="?type=home" class="btn btn-{% if inv_type == 'home' %}primary{% else %}outline-primary{% endif %}">
+        <a href="?type=home{% if search %}&search={{ search|urlencode }}{% endif %}" class="btn btn-{% if inv_type == 'home' %}primary{% else %}outline-primary{% endif %}">
             <i class="bi bi-house me-1"></i>Home Invoices
         </a>
-        <a href="?type=auto" class="btn btn-{% if inv_type == 'auto' %}primary{% else %}outline-primary{% endif %}">
+        <a href="?type=auto{% if search %}&search={{ search|urlencode }}{% endif %}" class="btn btn-{% if inv_type == 'auto' %}primary{% else %}outline-primary{% endif %}">
             <i class="bi bi-car-front me-1"></i>Auto Invoices
         </a>
+    </div>
+</div>
+
+<!-- Search -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form method="GET" class="row g-2 align-items-center">
+            <input type="hidden" name="type" value="{{ inv_type }}">
+            <div class="col-md-8">
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" name="search" class="form-control" placeholder="Customer name, invoice #, or policy #..." value="{{ search or '' }}">
+                </div>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">Search</button>
+            </div>
+            <div class="col-md-2">
+                <a href="{{ url_for('employee_invoices', type=inv_type) }}" class="btn btn-outline-secondary w-100">Clear</a>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -111,9 +132,10 @@
 {% block extra_js %}
 <script>
 function updatePolicyList() {
-    // Redirect to switch invoice type context
     const type = document.getElementById('newInvType').value;
-    window.location.href = '?type=' + type;
+    const params = new URLSearchParams(window.location.search);
+    params.set('type', type);
+    window.location.href = '?' + params.toString();
 }
 </script>
 {% endblock %}
