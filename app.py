@@ -418,9 +418,8 @@ def register():
         cust_id = max_id['next_id']
 
         conn = get_db()
+        cursor = conn.cursor()
         try:
-            conn.start_transaction()
-            cursor = conn.cursor()
             cursor.execute(
                 """INSERT INTO RAH_CUSTOMER (CUST_ID, FIRST_NAME, MIDDLE_NAME, LAST_NAME,
                    ADDR_LINE1, ADDR_LINE2, CITY, STATE, ZIP, GENDER, MARITAL_STATUS)
@@ -433,11 +432,12 @@ def register():
                 (username, password_hash, email, role, cust_id, security_question, answer_hash)
             )
             conn.commit()
-            cursor.close()
         except mysql.connector.Error as e:
             conn.rollback()
             flash(f'Registration failed: {str(e)}', 'danger')
             return render_template('register.html')
+        finally:
+            cursor.close()
     else:
         execute_query(
             "INSERT INTO RAH_USER (USERNAME, PASSWORD_HASH, EMAIL, ROLE, CUST_ID, SECURITY_QUESTION, SECURITY_ANSWER_HASH) VALUES (%s, %s, %s, %s, %s, %s, %s)",
@@ -860,19 +860,23 @@ def employee_add_customer():
         new_id = max_id['nid']
 
         conn = get_db()
-        conn.start_transaction()
         cursor = conn.cursor()
-        cursor.execute(
-            """INSERT INTO RAH_CUSTOMER (CUST_ID, FIRST_NAME, MIDDLE_NAME, LAST_NAME,
-               ADDR_LINE1, ADDR_LINE2, CITY, STATE, ZIP, GENDER, MARITAL_STATUS)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (new_id, first_name, middle_name, last_name, addr_line1, addr_line2,
-             city, state, zipcode, gender, marital_status)
-        )
-        for ct in cust_types:
-            cursor.execute("INSERT INTO RAH_CUST_TYPE (CUST_ID, CUST_TYPE) VALUES (%s, %s)", (new_id, ct))
-        conn.commit()
-        cursor.close()
+        try:
+            cursor.execute(
+                """INSERT INTO RAH_CUSTOMER (CUST_ID, FIRST_NAME, MIDDLE_NAME, LAST_NAME,
+                   ADDR_LINE1, ADDR_LINE2, CITY, STATE, ZIP, GENDER, MARITAL_STATUS)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (new_id, first_name, middle_name, last_name, addr_line1, addr_line2,
+                 city, state, zipcode, gender, marital_status)
+            )
+            for ct in cust_types:
+                cursor.execute("INSERT INTO RAH_CUST_TYPE (CUST_ID, CUST_TYPE) VALUES (%s, %s)", (new_id, ct))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            cursor.close()
         clear_cache()
         flash(f'Customer #{new_id} created successfully!', 'success')
     except Exception as e:
@@ -1279,16 +1283,20 @@ def employee_add_driver():
         new_id = max_id['nid']
 
         conn = get_db()
-        conn.start_transaction()
         cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO RAH_DRIVER (DRIVER_ID, DRIVER_LICENSE_NO, DRIVER_FNAME, DRIVER_LNAME, DRIVER_AGE) VALUES (%s,%s,%s,%s,%s)",
-            (new_id, license_no, fname, lname, age)
-        )
-        for vid in vehicle_ids:
-            cursor.execute("INSERT INTO RAH_VEHICLE_DRIVER (VEHICLE_ID, DRIVER_ID) VALUES (%s, %s)", (int(vid), new_id))
-        conn.commit()
-        cursor.close()
+        try:
+            cursor.execute(
+                "INSERT INTO RAH_DRIVER (DRIVER_ID, DRIVER_LICENSE_NO, DRIVER_FNAME, DRIVER_LNAME, DRIVER_AGE) VALUES (%s,%s,%s,%s,%s)",
+                (new_id, license_no, fname, lname, age)
+            )
+            for vid in vehicle_ids:
+                cursor.execute("INSERT INTO RAH_VEHICLE_DRIVER (VEHICLE_ID, DRIVER_ID) VALUES (%s, %s)", (int(vid), new_id))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            cursor.close()
         clear_cache()
         flash('Driver added successfully!', 'success')
     except Exception as e:
