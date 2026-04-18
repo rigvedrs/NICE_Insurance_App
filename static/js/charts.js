@@ -3,30 +3,48 @@
  * Consistent chart styling across the application
  */
 
-// Color palette for charts
+// NYU brand color palette for charts
+// Primary: NYU Violet (#57068c), Ultra Violet (#8900e1)
+// Secondary: Deep Violet (#330662), Medium Violet 1/2 (#702b9d, #7b5aa6),
+//            Light Violet 1 (#ab82c5)
+// Accents:  Teal (#009b8a), Blue (#59b2d1), Magenta (#fb0f78), Yellow (#f4ec51)
 const CHART_COLORS = {
-    primary: '#0c6e7a',
-    secondary: '#1a9baa',
-    success: '#27ae60',
-    warning: '#f39c12',
-    danger: '#e74c3c',
-    info: '#3498db',
-    purple: '#9b59b6',
-    teal: '#1abc9c',
-    orange: '#e67e22',
-    pink: '#e91e8c',
+    primary: '#57068c',       // NYU Violet
+    secondary: '#8900e1',     // Ultra Violet
+    success: '#009b8a',       // Teal
+    warning: '#f4ec51',       // Yellow
+    danger: '#fb0f78',        // Magenta
+    info: '#59b2d1',          // Blue
+    deepViolet: '#330662',
+    mediumViolet1: '#702b9d',
+    mediumViolet2: '#7b5aa6',
+    lightViolet: '#ab82c5',
 };
 
 const CHART_PALETTE = [
-    '#0c6e7a', '#1a9baa', '#3498db', '#9b59b6', '#27ae60',
-    '#f39c12', '#e74c3c', '#e67e22', '#1abc9c', '#34495e'
+    '#57068c', // NYU Violet
+    '#8900e1', // Ultra Violet
+    '#009b8a', // Teal
+    '#59b2d1', // Blue
+    '#7b5aa6', // Medium Violet 2
+    '#fb0f78', // Magenta
+    '#ab82c5', // Light Violet 1
+    '#702b9d', // Medium Violet 1
+    '#f4ec51', // Yellow
+    '#330662'  // Deep Violet
 ];
 
 const CHART_PALETTE_ALPHA = [
-    'rgba(12,110,122,0.7)', 'rgba(26,155,170,0.7)', 'rgba(52,152,219,0.7)',
-    'rgba(155,89,182,0.7)', 'rgba(39,174,96,0.7)', 'rgba(243,156,18,0.7)',
-    'rgba(231,76,60,0.7)', 'rgba(230,126,34,0.7)', 'rgba(26,188,156,0.7)',
-    'rgba(52,73,94,0.7)'
+    'rgba(87,6,140,0.75)',    // NYU Violet
+    'rgba(137,0,225,0.70)',   // Ultra Violet
+    'rgba(0,155,138,0.75)',   // Teal
+    'rgba(89,178,209,0.75)',  // Blue
+    'rgba(123,90,166,0.75)',  // Medium Violet 2
+    'rgba(251,15,120,0.70)',  // Magenta
+    'rgba(171,130,197,0.75)', // Light Violet 1
+    'rgba(112,43,157,0.75)',  // Medium Violet 1
+    'rgba(244,236,81,0.75)',  // Yellow
+    'rgba(51,6,98,0.80)'      // Deep Violet
 ];
 
 // Default chart options
@@ -129,7 +147,7 @@ function createLineChart(canvasId, labels, data, label) {
                 label: label || 'Value',
                 data: data,
                 borderColor: CHART_COLORS.primary,
-                backgroundColor: 'rgba(12,110,122,0.1)',
+                backgroundColor: 'rgba(87,6,140,0.12)',
                 fill: true,
                 tension: 0.3,
                 pointRadius: 4,
