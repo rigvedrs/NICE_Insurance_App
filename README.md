@@ -9,32 +9,126 @@ A full-stack insurance management web application built with Flask + MySQL + Boo
 
 ## Prerequisites
 
-- **Conda** (Miniconda or Anaconda) — for the Python environment
-- **Homebrew** — for MySQL on macOS
-- **MySQL 9.x** (installed via Homebrew)
+- **Python 3.10+** (3.11 recommended)
+- **MySQL 8.0+** (MySQL 9.x also supported)
+- **pip** (bundled with Python) or **Conda** (Miniconda/Anaconda) for managing the Python environment
+- **Git** (to clone the repo)
 
 ## Quick Setup
 
-### 1. Create Conda Environment & Install Python Dependencies
+### 1. Create a Python Environment & Install Dependencies
 
+You can use either the built-in `venv` module (recommended for simplicity) or Conda. Pick whichever you already use — both work on macOS, Linux, and Windows.
+
+<details>
+<summary><b>Option A — Python <code>venv</code> (recommended, no extra tools)</b></summary>
+
+**macOS / Linux:**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+**Windows (PowerShell):**
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+> If PowerShell blocks the activation script, run once:
+> `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`
+
+**Windows (Command Prompt / cmd):**
+```bat
+py -3.11 -m venv .venv
+.venv\Scripts\activate.bat
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+</details>
+
+<details>
+<summary><b>Option B — Conda (Miniconda / Anaconda)</b></summary>
+
+Works the same on macOS, Linux, and Windows (use **Anaconda Prompt** on Windows):
 ```bash
 conda create -n dbmsProj python=3.11 -y
 conda activate dbmsProj
 pip install -r requirements.txt
 ```
 
-### 2. Install & Start MySQL (macOS via Homebrew)
+</details>
+
+<details>
+<summary><b>Option C — <code>uv</code> (fast modern alternative)</b></summary>
+
+```bash
+uv venv --python 3.11
+# macOS/Linux:
+source .venv/bin/activate
+# Windows PowerShell:
+.\.venv\Scripts\Activate.ps1
+
+uv pip install -r requirements.txt
+```
+
+</details>
+
+### 2. Install & Start MySQL
+
+<details>
+<summary><b>macOS (Homebrew)</b></summary>
 
 ```bash
 brew install mysql
 brew services start mysql   # starts now and auto-starts on login
 ```
 
+Default root user has **no password** on Homebrew installs.
+
+</details>
+
+<details>
+<summary><b>Windows</b></summary>
+
+1. Download the **MySQL Installer for Windows** from <https://dev.mysql.com/downloads/installer/>.
+2. Run it and choose **Server only** (or **Developer Default**).
+3. During setup, set a **root password** (remember it — you'll put it in `config.py`).
+4. Finish the wizard; MySQL is installed as a Windows service and starts automatically.
+5. Make sure `mysql.exe` is on your `PATH` (usually `C:\Program Files\MySQL\MySQL Server 8.0\bin`), or use **MySQL 8.0 Command Line Client** from the Start menu.
+
+</details>
+
+<details>
+<summary><b>Linux (Debian/Ubuntu)</b></summary>
+
+```bash
+sudo apt update
+sudo apt install mysql-server
+sudo systemctl start mysql
+sudo systemctl enable mysql
+sudo mysql_secure_installation   # optional, to set a root password
+```
+
+</details>
+
 ### 3. Set Up the Database
 
+**macOS / Linux:**
 ```bash
 mysql -uroot < setup_database.sql
 ```
+
+**Windows (PowerShell or cmd):**
+```bat
+mysql -uroot -p < setup_database.sql
+```
+(You'll be prompted for the root password you chose during installation.)
 
 This creates the `nice_insurance` database with:
 - 16 tables (12 original + 4 new for Part 2)
@@ -47,31 +141,46 @@ This creates the `nice_insurance` database with:
 
 ### 4. Configure Database Connection
 
-The default `config.py` works out of the box with a Homebrew MySQL install (no root password). Edit it only if your credentials differ:
+The default `config.py` works out of the box with a Homebrew MySQL install (no root password). On Windows/Linux you'll usually need to set your root password. Edit `config.py`:
 
 ```python
 MYSQL_HOST = 'localhost'
 MYSQL_USER = 'root'
-MYSQL_PASSWORD = ''  # default for Homebrew MySQL
+MYSQL_PASSWORD = ''          # e.g. 'yourpassword' on Windows/Linux
 MYSQL_DATABASE = 'nice_insurance'
 MYSQL_PORT = 3306
 ```
 
-Or use environment variables:
+Or set it via environment variables (keeps secrets out of the repo):
+
+**macOS / Linux (bash/zsh):**
 ```bash
 export MYSQL_PASSWORD='yourpassword'
 ```
 
+**Windows (PowerShell):**
+```powershell
+$env:MYSQL_PASSWORD = "yourpassword"
+```
+
+**Windows (cmd):**
+```bat
+set MYSQL_PASSWORD=yourpassword
+```
+
 ### 5. Run the Application
 
+Make sure your environment is activated, then:
 ```bash
-conda activate dbmsProj
 python app.py
 ```
 
 The app starts at **http://localhost:8080**
 
-> **Note:** Port 8080 is used instead of 5000 because macOS reserves port 5000 for AirPlay Receiver (Control Center). You can override the port with `PORT=5001 python app.py` if needed.
+> **Note:** Port 8080 is used instead of 5000 because macOS reserves port 5000 for AirPlay Receiver (Control Center). You can override the port on any OS:
+> - macOS/Linux: `PORT=5001 python app.py`
+> - Windows PowerShell: `$env:PORT="5001"; python app.py`
+> - Windows cmd: `set PORT=5001 && python app.py`
 
 ## Default Credentials
 
