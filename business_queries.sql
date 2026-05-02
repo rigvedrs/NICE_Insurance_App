@@ -7,25 +7,33 @@ USE nice_insurance;
 
 -- ============================================================
 -- Q1: Table Join with at least 3 tables
--- Business Question: Which customers have both home and auto
---   insurance, and what is their total premium across all
---   active policies along with the number of vehicles insured?
+-- Business Question: Which people have both home and auto
+--   customer roles in the updated discriminator model, and what
+--   is their total active premium plus number of vehicles insured?
 -- ============================================================
 
 SELECT
-    c.CUST_ID                                           AS "Customer ID",
-    CONCAT(c.FIRST_NAME, ' ', c.LAST_NAME)             AS "Customer Name",
-    CONCAT(c.CITY, ', ', c.STATE)                       AS "Location",
+    home_role.CUST_ID                                   AS "Home Customer ID",
+    auto_role.CUST_ID                                   AS "Auto Customer ID",
+    CONCAT(home_role.FIRST_NAME, ' ', home_role.LAST_NAME) AS "Customer Name",
+    CONCAT(home_role.CITY, ', ', home_role.STATE)       AS "Location",
     COUNT(DISTINCT hp.HPOLICY_ID)                       AS "Active Home Policies",
     COUNT(DISTINCT ap.APOLICY_ID)                       AS "Active Auto Policies",
     COUNT(DISTINCT v.VEHICLE_ID)                        AS "Insured Vehicles",
     COALESCE(SUM(DISTINCT hp.HPREMIUM_AMT), 0)
       + COALESCE(SUM(DISTINCT ap.APREMIUM_AMT), 0)     AS "Total Active Premium ($)"
-FROM RAH_CUSTOMER c
-    JOIN RAH_HOME_POLICY hp ON c.CUST_ID = hp.CUST_ID AND hp.HPOLICY_STATUS = 'C'
-    JOIN RAH_AUTO_POLICY ap ON c.CUST_ID = ap.CUST_ID AND ap.APOLICY_STATUS = 'C'
+FROM RAH_CUSTOMER home_role
+    JOIN RAH_CUSTOMER auto_role
+      ON home_role.FIRST_NAME = auto_role.FIRST_NAME
+     AND home_role.LAST_NAME = auto_role.LAST_NAME
+     AND home_role.ADDR_LINE1 = auto_role.ADDR_LINE1
+     AND home_role.ZIP = auto_role.ZIP
+     AND home_role.CUST_TYPE = 'H'
+     AND auto_role.CUST_TYPE = 'A'
+    JOIN RAH_HOME_POLICY hp ON home_role.CUST_ID = hp.CUST_ID AND hp.HPOLICY_STATUS = 'C'
+    JOIN RAH_AUTO_POLICY ap ON auto_role.CUST_ID = ap.CUST_ID AND ap.APOLICY_STATUS = 'C'
     LEFT JOIN RAH_VEHICLE v ON ap.APOLICY_ID = v.APOLICY_ID
-GROUP BY c.CUST_ID, c.FIRST_NAME, c.LAST_NAME, c.CITY, c.STATE
+GROUP BY home_role.CUST_ID, auto_role.CUST_ID, home_role.FIRST_NAME, home_role.LAST_NAME, home_role.CITY, home_role.STATE
 ORDER BY "Total Active Premium ($)" DESC;
 
 

@@ -406,11 +406,15 @@ def register():
         city = sanitize(request.form.get('city', '').strip())
         state = sanitize(request.form.get('state', '').strip())
         zipcode = sanitize(request.form.get('zip', '').strip())
+        cust_type = request.form.get('cust_type', 'H').strip()
         gender = request.form.get('gender', '').strip() or None
         marital_status = request.form.get('marital_status', 'S').strip()
 
         if not first_name or not last_name or not addr_line1 or not city or not state or not zipcode:
             flash('All required customer fields must be filled.', 'danger')
+            return render_template('register.html')
+        if cust_type not in ('H', 'A'):
+            flash('Customer type must be Home or Auto.', 'danger')
             return render_template('register.html')
 
         # Get next CUST_ID
@@ -421,10 +425,10 @@ def register():
         cursor = conn.cursor()
         try:
             cursor.execute(
-                """INSERT INTO RAH_CUSTOMER (CUST_ID, FIRST_NAME, MIDDLE_NAME, LAST_NAME,
+                """INSERT INTO RAH_CUSTOMER (CUST_ID, CUST_TYPE, FIRST_NAME, MIDDLE_NAME, LAST_NAME,
                    ADDR_LINE1, ADDR_LINE2, CITY, STATE, ZIP, GENDER, MARITAL_STATUS)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                (cust_id, first_name, middle_name, last_name, addr_line1, addr_line2,
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (cust_id, cust_type, first_name, middle_name, last_name, addr_line1, addr_line2,
                  city, state, zipcode, gender, marital_status)
             )
             cursor.execute(
@@ -718,9 +722,7 @@ def customer_vehicles():
     vehicle_drivers = {}
     for v in vehicles:
         drivers = execute_query(
-            """SELECT d.* FROM RAH_DRIVER d
-               JOIN RAH_VEHICLE_DRIVER vd ON d.DRIVER_ID = vd.DRIVER_ID
-               WHERE vd.VEHICLE_ID = %s""",
+            "SELECT d.* FROM RAH_DRIVER d WHERE d.VEHICLE_ID = %s",
             (v['VEHICLE_ID'],), fetchall=True
         )
         vehicle_drivers[v['VEHICLE_ID']] = drivers
@@ -758,9 +760,7 @@ def customer_profile():
         "SELECT USERNAME, EMAIL, CREATED_AT, LAST_LOGIN FROM RAH_USER WHERE CUST_ID = %s",
         (cust_id,), fetchone=True
     )
-    cust_types = execute_query(
-        "SELECT CUST_TYPE FROM RAH_CUST_TYPE WHERE CUST_ID = %s", (cust_id,), fetchall=True
-    )
+    cust_types = [{'CUST_TYPE': customer['CUST_TYPE']}] if customer else []
 
     return render_template('customer/profile.html', customer=customer, user=user, cust_types=cust_types)
 
@@ -813,11 +813,10 @@ def employee_customers():
     if search:
         search_param = f"%{search}%"
         customers = execute_query(
-            """SELECT c.*, GROUP_CONCAT(ct.CUST_TYPE) as types
+            """SELECT c.*, c.CUST_TYPE as types
                FROM RAH_CUSTOMER c
-               LEFT JOIN RAH_CUST_TYPE ct ON c.CUST_ID = ct.CUST_ID
                WHERE c.FIRST_NAME LIKE %s OR c.LAST_NAME LIKE %s OR c.CITY LIKE %s OR c.STATE LIKE %s
-               GROUP BY c.CUST_ID ORDER BY c.CUST_ID LIMIT %s OFFSET %s""",
+               ORDER BY c.CUST_ID LIMIT %s OFFSET %s""",
             (search_param, search_param, search_param, search_param, per_page, offset), fetchall=True
         )
         total = execute_query(
@@ -827,10 +826,9 @@ def employee_customers():
         )
     else:
         customers = execute_query(
-            """SELECT c.*, GROUP_CONCAT(ct.CUST_TYPE) as types
+            """SELECT c.*, c.CUST_TYPE as types
                FROM RAH_CUSTOMER c
-               LEFT JOIN RAH_CUST_TYPE ct ON c.CUST_ID = ct.CUST_ID
-               GROUP BY c.CUST_ID ORDER BY c.CUST_ID LIMIT %s OFFSET %s""",
+               ORDER BY c.CUST_ID LIMIT %s OFFSET %s""",
             (per_page, offset), fetchall=True
         )
         total = execute_query("SELECT COUNT(*) as cnt FROM RAH_CUSTOMER", fetchone=True)
@@ -851,9 +849,9 @@ def employee_add_customer():
     city = sanitize(request.form.get('city', '').strip())
     state = sanitize(request.form.get('state', '').strip())
     zipcode = sanitize(request.form.get('zip', '').strip())
+    cust_type = request.form.get('cust_type', 'H')
     gender = request.form.get('gender') or None
     marital_status = request.form.get('marital_status', 'S')
-    cust_types = request.form.getlist('cust_types')
 
     try:
         max_id = execute_query("SELECT COALESCE(MAX(CUST_ID), 0) + 1 AS nid FROM RAH_CUSTOMER", fetchone=True)
@@ -863,14 +861,12 @@ def employee_add_customer():
         cursor = conn.cursor()
         try:
             cursor.execute(
-                """INSERT INTO RAH_CUSTOMER (CUST_ID, FIRST_NAME, MIDDLE_NAME, LAST_NAME,
+                """INSERT INTO RAH_CUSTOMER (CUST_ID, CUST_TYPE, FIRST_NAME, MIDDLE_NAME, LAST_NAME,
                    ADDR_LINE1, ADDR_LINE2, CITY, STATE, ZIP, GENDER, MARITAL_STATUS)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                (new_id, first_name, middle_name, last_name, addr_line1, addr_line2,
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (new_id, cust_type, first_name, middle_name, last_name, addr_line1, addr_line2,
                  city, state, zipcode, gender, marital_status)
             )
-            for ct in cust_types:
-                cursor.execute("INSERT INTO RAH_CUST_TYPE (CUST_ID, CUST_TYPE) VALUES (%s, %s)", (new_id, ct))
             conn.commit()
         except Exception:
             conn.rollback()
@@ -895,15 +891,16 @@ def employee_edit_customer(cust_id):
     city = sanitize(request.form.get('city', '').strip())
     state = sanitize(request.form.get('state', '').strip())
     zipcode = sanitize(request.form.get('zip', '').strip())
+    cust_type = request.form.get('cust_type', 'H')
     gender = request.form.get('gender') or None
     marital_status = request.form.get('marital_status', 'S')
 
     try:
         execute_query(
-            """UPDATE RAH_CUSTOMER SET FIRST_NAME=%s, MIDDLE_NAME=%s, LAST_NAME=%s,
+            """UPDATE RAH_CUSTOMER SET CUST_TYPE=%s, FIRST_NAME=%s, MIDDLE_NAME=%s, LAST_NAME=%s,
                ADDR_LINE1=%s, ADDR_LINE2=%s, CITY=%s, STATE=%s, ZIP=%s,
                GENDER=%s, MARITAL_STATUS=%s WHERE CUST_ID=%s""",
-            (first_name, middle_name, last_name, addr_line1, addr_line2,
+            (cust_type, first_name, middle_name, last_name, addr_line1, addr_line2,
              city, state, zipcode, gender, marital_status, cust_id), commit=True
         )
         clear_cache()
@@ -978,7 +975,7 @@ def employee_policies():
                 fetchall=True
             )
 
-    customers = execute_query("SELECT CUST_ID, FIRST_NAME, LAST_NAME FROM RAH_CUSTOMER ORDER BY LAST_NAME", fetchall=True)
+    customers = execute_query("SELECT CUST_ID, CUST_TYPE, FIRST_NAME, LAST_NAME FROM RAH_CUSTOMER ORDER BY LAST_NAME", fetchall=True)
     return render_template('employee/policies.html', policies=policies, policy_type=policy_type,
                          customers=customers, search=search)
 
@@ -1002,7 +999,7 @@ def employee_add_policy():
             new_hpolicy_id = max_id['nid']
             execute_query(
                 """INSERT INTO RAH_HOME_POLICY (HPOLICY_ID, HPOLICY_START_DT, HPOLICY_END_DT,
-                   HPREMIUM_AMT, HPOLICY_STATUS, CUST_ID) VALUES (%s,%s,%s,%s,%s,%s)""",
+                   HPREMIUM_AMT, HPOLICY_STATUS, CUST_ID, CUST_TYPE) VALUES (%s,%s,%s,%s,%s,%s,'H')""",
                 (new_hpolicy_id, start_dt, end_dt, premium, status, cust_id), commit=True
             )
             max_home = execute_query("SELECT COALESCE(MAX(HOME_ID), 0)+1 AS nid FROM RAH_HOME", fetchone=True)
@@ -1020,24 +1017,13 @@ def employee_add_policy():
                 ),
                 commit=True,
             )
-            # Ensure customer type exists
-            existing = execute_query(
-                "SELECT 1 FROM RAH_CUST_TYPE WHERE CUST_ID=%s AND CUST_TYPE='H'", (cust_id,), fetchone=True
-            )
-            if not existing:
-                execute_query("INSERT INTO RAH_CUST_TYPE VALUES (%s, 'H')", (cust_id,), commit=True)
         else:
             max_id = execute_query("SELECT COALESCE(MAX(APOLICY_ID), 0)+1 AS nid FROM RAH_AUTO_POLICY", fetchone=True)
             execute_query(
                 """INSERT INTO RAH_AUTO_POLICY (APOLICY_ID, APOLICY_START_DT, APOLICY_END_DT,
-                   APREMIUM_AMT, APOLICY_STATUS, CUST_ID) VALUES (%s,%s,%s,%s,%s,%s)""",
+                   APREMIUM_AMT, APOLICY_STATUS, CUST_ID, CUST_TYPE) VALUES (%s,%s,%s,%s,%s,%s,'A')""",
                 (max_id['nid'], start_dt, end_dt, premium, status, cust_id), commit=True
             )
-            existing = execute_query(
-                "SELECT 1 FROM RAH_CUST_TYPE WHERE CUST_ID=%s AND CUST_TYPE='A'", (cust_id,), fetchone=True
-            )
-            if not existing:
-                execute_query("INSERT INTO RAH_CUST_TYPE VALUES (%s, 'A')", (cust_id,), commit=True)
 
         clear_cache()
         flash('Policy created successfully!', 'success')
@@ -1389,30 +1375,23 @@ def employee_drivers():
     sp = f"%{search}%"
     if search:
         drivers = execute_query(
-            """SELECT d.*, GROUP_CONCAT(CONCAT(v.VEHICLE_MAKE, ' ', v.VEHICLE_MODEL) SEPARATOR ', ') as vehicles
+            """SELECT d.*, CONCAT(v.VEHICLE_YEAR, ' ', v.VEHICLE_MAKE, ' ', v.VEHICLE_MODEL) as vehicles
                FROM RAH_DRIVER d
-               LEFT JOIN RAH_VEHICLE_DRIVER vd ON d.DRIVER_ID = vd.DRIVER_ID
-               LEFT JOIN RAH_VEHICLE v ON vd.VEHICLE_ID = v.VEHICLE_ID
+               JOIN RAH_VEHICLE v ON d.VEHICLE_ID = v.VEHICLE_ID
                WHERE d.DRIVER_LICENSE_NO LIKE %s OR d.DRIVER_FNAME LIKE %s OR d.DRIVER_LNAME LIKE %s
                OR CAST(d.DRIVER_ID AS CHAR) LIKE %s OR CAST(d.DRIVER_AGE AS CHAR) LIKE %s
-               OR EXISTS (
-                   SELECT 1 FROM RAH_VEHICLE_DRIVER vd2
-                   JOIN RAH_VEHICLE v2 ON vd2.VEHICLE_ID = v2.VEHICLE_ID
-                   WHERE vd2.DRIVER_ID = d.DRIVER_ID
-                   AND (v2.VEHICLE_VIN LIKE %s OR v2.VEHICLE_MAKE LIKE %s OR v2.VEHICLE_MODEL LIKE %s
-                        OR CAST(v2.VEHICLE_YEAR AS CHAR) LIKE %s)
-               )
-               GROUP BY d.DRIVER_ID ORDER BY d.DRIVER_LNAME""",
+               OR v.VEHICLE_VIN LIKE %s OR v.VEHICLE_MAKE LIKE %s OR v.VEHICLE_MODEL LIKE %s
+               OR CAST(v.VEHICLE_YEAR AS CHAR) LIKE %s
+               ORDER BY d.DRIVER_LNAME""",
             (sp, sp, sp, sp, sp, sp, sp, sp, sp),
             fetchall=True,
         )
     else:
         drivers = execute_query(
-            """SELECT d.*, GROUP_CONCAT(CONCAT(v.VEHICLE_MAKE, ' ', v.VEHICLE_MODEL) SEPARATOR ', ') as vehicles
+            """SELECT d.*, CONCAT(v.VEHICLE_YEAR, ' ', v.VEHICLE_MAKE, ' ', v.VEHICLE_MODEL) as vehicles
                FROM RAH_DRIVER d
-               LEFT JOIN RAH_VEHICLE_DRIVER vd ON d.DRIVER_ID = vd.DRIVER_ID
-               LEFT JOIN RAH_VEHICLE v ON vd.VEHICLE_ID = v.VEHICLE_ID
-               GROUP BY d.DRIVER_ID ORDER BY d.DRIVER_LNAME""",
+               JOIN RAH_VEHICLE v ON d.VEHICLE_ID = v.VEHICLE_ID
+               ORDER BY d.DRIVER_LNAME""",
             fetchall=True,
         )
     vehicles = execute_query("SELECT VEHICLE_ID, VEHICLE_MAKE, VEHICLE_MODEL, VEHICLE_YEAR FROM RAH_VEHICLE ORDER BY VEHICLE_MAKE", fetchall=True)
@@ -1426,7 +1405,7 @@ def employee_add_driver():
     fname = sanitize(request.form.get('fname', '').strip())
     lname = sanitize(request.form.get('lname', '').strip())
     age = int(request.form.get('age'))
-    vehicle_ids = request.form.getlist('vehicle_ids')
+    vehicle_id = int(request.form.get('vehicle_id'))
 
     try:
         max_id = execute_query("SELECT COALESCE(MAX(DRIVER_ID),0)+1 AS nid FROM RAH_DRIVER", fetchone=True)
@@ -1436,11 +1415,9 @@ def employee_add_driver():
         cursor = conn.cursor()
         try:
             cursor.execute(
-                "INSERT INTO RAH_DRIVER (DRIVER_ID, DRIVER_LICENSE_NO, DRIVER_FNAME, DRIVER_LNAME, DRIVER_AGE) VALUES (%s,%s,%s,%s,%s)",
-                (new_id, license_no, fname, lname, age)
+                "INSERT INTO RAH_DRIVER (DRIVER_ID, DRIVER_LICENSE_NO, DRIVER_FNAME, DRIVER_LNAME, DRIVER_AGE, VEHICLE_ID) VALUES (%s,%s,%s,%s,%s,%s)",
+                (new_id, license_no, fname, lname, age, vehicle_id)
             )
-            for vid in vehicle_ids:
-                cursor.execute("INSERT INTO RAH_VEHICLE_DRIVER (VEHICLE_ID, DRIVER_ID) VALUES (%s, %s)", (int(vid), new_id))
             conn.commit()
         except Exception:
             conn.rollback()
@@ -1461,11 +1438,12 @@ def employee_edit_driver(driver_id):
     fname = sanitize(request.form.get('fname', '').strip())
     lname = sanitize(request.form.get('lname', '').strip())
     age = int(request.form.get('age'))
+    vehicle_id = int(request.form.get('vehicle_id'))
 
     try:
         execute_query(
-            "UPDATE RAH_DRIVER SET DRIVER_LICENSE_NO=%s, DRIVER_FNAME=%s, DRIVER_LNAME=%s, DRIVER_AGE=%s WHERE DRIVER_ID=%s",
-            (license_no, fname, lname, age, driver_id), commit=True
+            "UPDATE RAH_DRIVER SET DRIVER_LICENSE_NO=%s, DRIVER_FNAME=%s, DRIVER_LNAME=%s, DRIVER_AGE=%s, VEHICLE_ID=%s WHERE DRIVER_ID=%s",
+            (license_no, fname, lname, age, vehicle_id, driver_id), commit=True
         )
         clear_cache()
         flash('Driver updated successfully!', 'success')
@@ -1493,7 +1471,7 @@ def employee_assign_driver():
     vehicle_id = int(request.form.get('vehicle_id'))
     try:
         execute_query(
-            "INSERT INTO RAH_VEHICLE_DRIVER (VEHICLE_ID, DRIVER_ID) VALUES (%s, %s)",
+            "UPDATE RAH_DRIVER SET VEHICLE_ID = %s WHERE DRIVER_ID = %s",
             (vehicle_id, driver_id), commit=True
         )
         flash('Driver assigned to vehicle!', 'success')
@@ -1709,8 +1687,8 @@ def api_table_counts():
     ALLOWED_TABLES = {
         'RAH_CUSTOMER', 'RAH_HOME_POLICY', 'RAH_AUTO_POLICY', 'RAH_HOME_INVOICE',
         'RAH_AUTO_INVOICE', 'RAH_HOME_PAYMENT', 'RAH_AUTO_PAYMENT', 'RAH_VEHICLE',
-        'RAH_DRIVER', 'RAH_HOME', 'RAH_VEHICLE_DRIVER', 'RAH_CUST_TYPE',
-        'RAH_USER', 'RAH_LOGIN_HISTORY', 'RAH_POLICY_AUDIT', 'RAH_PASSWORD_RESET'
+        'RAH_DRIVER', 'RAH_HOME', 'RAH_USER', 'RAH_LOGIN_HISTORY',
+        'RAH_POLICY_AUDIT', 'RAH_PASSWORD_RESET'
     }
     counts = {}
     for t in ALLOWED_TABLES:

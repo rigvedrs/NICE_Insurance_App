@@ -16,7 +16,6 @@ function loadTableCounts() {
         let html = '<div class="row g-2">';
         const tableNames = {
             'RAH_CUSTOMER': { icon: 'bi-people', label: 'Customers' },
-            'RAH_CUST_TYPE': { icon: 'bi-tags', label: 'Customer Types' },
             'RAH_HOME_POLICY': { icon: 'bi-house', label: 'Home Policies' },
             'RAH_HOME': { icon: 'bi-house-door', label: 'Homes' },
             'RAH_HOME_INVOICE': { icon: 'bi-receipt', label: 'Home Invoices' },
@@ -26,7 +25,6 @@ function loadTableCounts() {
             'RAH_AUTO_PAYMENT': { icon: 'bi-credit-card', label: 'Auto Payments' },
             'RAH_VEHICLE': { icon: 'bi-truck', label: 'Vehicles' },
             'RAH_DRIVER': { icon: 'bi-person-badge', label: 'Drivers' },
-            'RAH_VEHICLE_DRIVER': { icon: 'bi-link', label: 'Vehicle-Driver' },
             'RAH_USER': { icon: 'bi-person-lock', label: 'Users' },
             'RAH_LOGIN_HISTORY': { icon: 'bi-clock-history', label: 'Login History' },
             'RAH_POLICY_AUDIT': { icon: 'bi-journal-text', label: 'Audit Trail' },

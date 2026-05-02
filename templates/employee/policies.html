@@ -120,9 +120,11 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Customer *</label>
-                        <select name="cust_id" class="form-select" required>
+                        <select name="cust_id" id="add_policy_customer" class="form-select" required>
                             {% for c in customers %}
-                            <option value="{{ c.CUST_ID }}">{{ c.CUST_ID }} - {{ c.FIRST_NAME }} {{ c.LAST_NAME }}</option>
+                            <option value="{{ c.CUST_ID }}" data-cust-type="{{ c.CUST_TYPE }}">
+                                {{ c.CUST_ID }} - {{ c.FIRST_NAME }} {{ c.LAST_NAME }} ({{ 'Home' if c.CUST_TYPE == 'H' else 'Auto' }})
+                            </option>
                             {% endfor %}
                         </select>
                     </div>
@@ -222,12 +224,22 @@ function toggleAddHomeFields() {
     const pt = document.getElementById('add_policy_type').value;
     const block = document.getElementById('addHomeFields');
     const ht = document.getElementById('add_home_type');
+    const customerSelect = document.getElementById('add_policy_customer');
+    const neededType = pt === 'home' ? 'H' : 'A';
     if (pt === 'home') {
         block.style.display = 'block';
         ht.required = true;
     } else {
         block.style.display = 'none';
         ht.required = false;
+    }
+    Array.from(customerSelect.options).forEach(option => {
+        option.hidden = option.dataset.custType !== neededType;
+    });
+    const selected = customerSelect.options[customerSelect.selectedIndex];
+    if (!selected || selected.hidden) {
+        const firstVisible = Array.from(customerSelect.options).find(option => !option.hidden);
+        if (firstVisible) customerSelect.value = firstVisible.value;
     }
 }
 document.addEventListener('DOMContentLoaded', toggleAddHomeFields);

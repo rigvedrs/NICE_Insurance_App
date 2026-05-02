@@ -93,6 +93,14 @@
                             <input type="text" name="last_name" class="form-control cust-field">
                         </div>
                     </div>
+                    <div class="mb-3">
+                        <label class="form-label">Customer type <span class="text-danger">*</span></label>
+                        <select name="cust_type" class="form-select">
+                            <option value="H">Home insurance customer</option>
+                            <option value="A">Auto insurance customer</option>
+                        </select>
+                        <small class="text-muted">The updated database model stores one primary insurance type per customer record.</small>
+                    </div>
                     <div class="row g-3 mb-3">
                         <div class="col-md-6">
                             <label class="form-label">Gender</label>

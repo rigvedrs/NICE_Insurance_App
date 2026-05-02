@@ -1,6 +1,7 @@
 -- ============================================================
 -- NICE Insurance Database - CS-GY 6083 Part II
--- Complete DDL + Sample Data + Stored Procedures + Triggers
+-- MySQL conversion of the updated Oracle Data Modeler DDL
+-- Core schema: 10 business tables + 4 application extension tables
 -- ============================================================
 
 DROP DATABASE IF EXISTS nice_insurance;
@@ -8,168 +9,182 @@ CREATE DATABASE nice_insurance CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE nice_insurance;
 
 -- ============================================================
--- 1. TABLE DEFINITIONS (16 tables)
+-- 1. TABLE DEFINITIONS
 -- ============================================================
 
--- Table 1: RAH_CUSTOMER
+-- Core Table 1: RAH_CUSTOMER
 CREATE TABLE RAH_CUSTOMER (
-    CUST_ID INT PRIMARY KEY,
-    FIRST_NAME VARCHAR(50) NOT NULL,
-    MIDDLE_NAME VARCHAR(50) NULL,
-    LAST_NAME VARCHAR(50) NOT NULL,
-    ADDR_LINE1 VARCHAR(100) NOT NULL,
-    ADDR_LINE2 VARCHAR(100) NULL,
-    CITY VARCHAR(50) NOT NULL,
-    STATE VARCHAR(2) NOT NULL,
-    ZIP VARCHAR(5) NOT NULL,
-    GENDER CHAR(1) NULL,
-    MARITAL_STATUS CHAR(1) NOT NULL,
-    CONSTRAINT chk_gender CHECK (GENDER IN ('M', 'F') OR GENDER IS NULL),
-    CONSTRAINT chk_marital CHECK (MARITAL_STATUS IN ('M', 'S', 'W'))
+    CUST_ID INT NOT NULL COMMENT 'System-generated unique customer identifier',
+    CUST_TYPE CHAR(1) NOT NULL COMMENT 'A=Auto customer, H=Home customer',
+    FIRST_NAME VARCHAR(50) NOT NULL COMMENT 'Customer first name (composite resolved)',
+    MIDDLE_NAME VARCHAR(50) NULL COMMENT 'Customer middle name (composite resolved)',
+    LAST_NAME VARCHAR(50) NOT NULL COMMENT 'Customer last name (composite attribute resolved)',
+    ADDR_LINE1 VARCHAR(100) NOT NULL COMMENT 'Street address line 1 (composite attribute resolved)',
+    ADDR_LINE2 VARCHAR(100) NULL COMMENT 'Street address line 2 (composite attribute resolved)',
+    CITY VARCHAR(50) NOT NULL COMMENT 'City of residence',
+    STATE VARCHAR(2) NOT NULL COMMENT 'US State abbreviation',
+    ZIP VARCHAR(5) NOT NULL COMMENT 'ZIP code',
+    GENDER CHAR(1) NULL COMMENT 'M=Male, F=Female. Customer may choose not to provide',
+    MARITAL_STATUS CHAR(1) NOT NULL COMMENT 'M=Married, S=Single, W=Widow/Widower',
+    CONSTRAINT RAH_CUSTOMER_PK PRIMARY KEY (CUST_ID),
+    CONSTRAINT RAH_CUSTOMER_UK_ID_TYPE UNIQUE (CUST_ID, CUST_TYPE),
+    CONSTRAINT RAH_CUSTOMER_CK_3 CHECK (CUST_TYPE IN ('A','H')),
+    CONSTRAINT RAH_CHK_GENDER CHECK (GENDER IN ('M','F') OR GENDER IS NULL),
+    CONSTRAINT RAH_CHK_MARITAL CHECK (MARITAL_STATUS IN ('M','S','W'))
 );
 
--- Table 2: RAH_CUST_TYPE
-CREATE TABLE RAH_CUST_TYPE (
-    CUST_ID INT NOT NULL,
-    CUST_TYPE CHAR(1) NOT NULL,
-    PRIMARY KEY (CUST_ID, CUST_TYPE),
-    CONSTRAINT fk_custtype_cust FOREIGN KEY (CUST_ID) REFERENCES RAH_CUSTOMER(CUST_ID) ON DELETE CASCADE,
-    CONSTRAINT chk_cust_type CHECK (CUST_TYPE IN ('A', 'H'))
-);
-
--- Table 3: RAH_HOME_POLICY
+-- Core Table 2: RAH_HOME_POLICY
 CREATE TABLE RAH_HOME_POLICY (
-    HPOLICY_ID INT PRIMARY KEY,
-    HPOLICY_START_DT DATE NOT NULL,
-    HPOLICY_END_DT DATE NOT NULL,
-    HPREMIUM_AMT DECIMAL(12,2) NOT NULL,
-    HPOLICY_STATUS CHAR(1) NOT NULL,
-    CUST_ID INT NOT NULL,
-    CONSTRAINT fk_hpolicy_cust FOREIGN KEY (CUST_ID) REFERENCES RAH_CUSTOMER(CUST_ID) ON DELETE CASCADE,
-    CONSTRAINT chk_hpolicy_dt CHECK (HPOLICY_END_DT > HPOLICY_START_DT),
-    CONSTRAINT chk_hpremium CHECK (HPREMIUM_AMT > 0),
-    CONSTRAINT chk_hpolicy_status CHECK (HPOLICY_STATUS IN ('C', 'E'))
+    HPOLICY_ID INT NOT NULL COMMENT 'Unique home insurance policy identifier',
+    HPOLICY_START_DT DATE NOT NULL COMMENT 'Home insurance policy start date',
+    HPOLICY_END_DT DATE NOT NULL COMMENT 'Home insurance policy end date; must be after start date',
+    HPREMIUM_AMT DECIMAL(12,2) NOT NULL COMMENT 'Home insurance premium amount in USD',
+    HPOLICY_STATUS CHAR(1) NOT NULL COMMENT 'C=Current, E=Expired',
+    CUST_ID INT NOT NULL COMMENT 'System-generated unique customer identifier',
+    CUST_TYPE CHAR(1) NOT NULL DEFAULT 'H' COMMENT 'Must be H for home policies',
+    CONSTRAINT RAH_HOME_POLICY_PK PRIMARY KEY (HPOLICY_ID),
+    CONSTRAINT RAH_HOME_POLICY_UK UNIQUE (HPOLICY_ID),
+    CONSTRAINT RAH_CHK_HPOL_DT CHECK (HPOLICY_END_DT > HPOLICY_START_DT),
+    CONSTRAINT RAH_CHK_HPREM CHECK (HPREMIUM_AMT > 0),
+    CONSTRAINT RAH_CHK_HPOL_ST CHECK (HPOLICY_STATUS IN ('C','E')),
+    CONSTRAINT RAH_HOME_POLICY_CK_4 CHECK (CUST_TYPE = 'H'),
+    CONSTRAINT RAH_CUSTOMER_FK FOREIGN KEY (CUST_ID, CUST_TYPE)
+        REFERENCES RAH_CUSTOMER (CUST_ID, CUST_TYPE) ON DELETE CASCADE
 );
 
--- Table 4: RAH_HOME
+-- Core Table 3: RAH_HOME
 CREATE TABLE RAH_HOME (
-    HOME_ID INT PRIMARY KEY,
+    HOME_ID INT NOT NULL COMMENT 'Unique identifier for each insured home',
     HOME_PURCHASE_DT DATE NOT NULL,
-    HOME_PURCHASE_VAL DECIMAL(14,2) NOT NULL,
-    HOME_AREA_SQFT DECIMAL(10,2) NOT NULL,
-    HOME_TYPE CHAR(1) NOT NULL,
-    AUTO_FIRE_NOTIF TINYINT NOT NULL,
-    HOME_SECURITY_SYS TINYINT NOT NULL,
-    SWIMMING_POOL CHAR(1) NULL,
-    BASEMENT TINYINT NOT NULL,
+    HOME_PURCHASE_VAL DECIMAL(14,2) NOT NULL COMMENT 'Purchase value of the home in USD',
+    HOME_AREA_SQFT DECIMAL(10,2) NOT NULL COMMENT 'Home area in square feet',
+    HOME_TYPE CHAR(1) NOT NULL COMMENT 'S=Single Family, M=Multi Family, C=Condominium, T=Town House',
+    AUTO_FIRE_NOTIF TINYINT NOT NULL COMMENT '1=Auto fire notification present, 0=Not present',
+    HOME_SECURITY_SYS TINYINT NOT NULL COMMENT '1=Security system installed and monitored, 0=Not',
+    SWIMMING_POOL CHAR(1) NULL COMMENT 'U=Underground, O=Overground, I=Indoor, M=Multiple, NULL=No pool',
+    BASEMENT TINYINT NOT NULL COMMENT '1=Has basement, 0=No basement',
     HPOLICY_ID INT NOT NULL,
-    CONSTRAINT fk_home_hpolicy FOREIGN KEY (HPOLICY_ID) REFERENCES RAH_HOME_POLICY(HPOLICY_ID) ON DELETE CASCADE,
-    CONSTRAINT chk_home_val CHECK (HOME_PURCHASE_VAL > 0),
-    CONSTRAINT chk_home_area CHECK (HOME_AREA_SQFT > 0),
-    CONSTRAINT chk_home_type CHECK (HOME_TYPE IN ('S', 'M', 'C', 'T')),
-    CONSTRAINT chk_fire_notif CHECK (AUTO_FIRE_NOTIF IN (0, 1)),
-    CONSTRAINT chk_security_sys CHECK (HOME_SECURITY_SYS IN (0, 1)),
-    CONSTRAINT chk_pool CHECK (SWIMMING_POOL IN ('U', 'O', 'I', 'M') OR SWIMMING_POOL IS NULL),
-    CONSTRAINT chk_basement CHECK (BASEMENT IN (0, 1))
+    CONSTRAINT RAH_HOME_PK PRIMARY KEY (HOME_ID),
+    CONSTRAINT RAH_CHK_HOMEVAL CHECK (HOME_PURCHASE_VAL > 0),
+    CONSTRAINT RAH_CHK_AREA CHECK (HOME_AREA_SQFT > 0),
+    CONSTRAINT RAH_CHK_HOME_TYP CHECK (HOME_TYPE IN ('S','M','C','T')),
+    CONSTRAINT RAH_CHK_FIRE CHECK (AUTO_FIRE_NOTIF IN (1,0)),
+    CONSTRAINT RAH_CHK_SECURITY CHECK (HOME_SECURITY_SYS IN (1,0)),
+    CONSTRAINT RAH_CHK_POOL CHECK (SWIMMING_POOL IN ('U','O','I','M') OR SWIMMING_POOL IS NULL),
+    CONSTRAINT RAH_CHK_BASEMENT CHECK (BASEMENT IN (1,0)),
+    CONSTRAINT RAH_HOME_POLICY_FK FOREIGN KEY (HPOLICY_ID)
+        REFERENCES RAH_HOME_POLICY (HPOLICY_ID) ON DELETE CASCADE
 );
 
--- Table 5: RAH_HOME_INVOICE
+-- Core Table 4: RAH_HOME_INVOICE
 CREATE TABLE RAH_HOME_INVOICE (
-    HINVOICE_ID INT PRIMARY KEY,
-    HINVOICE_DT DATE NOT NULL,
-    HINVOICE_DUE_DT DATE NOT NULL,
-    HINVOICE_AMT DECIMAL(12,2) NOT NULL,
+    HINVOICE_ID INT NOT NULL COMMENT 'Unique home insurance invoice identifier',
+    HINVOICE_DT DATE NOT NULL COMMENT 'Date the invoice was generated',
+    HINVOICE_DUE_DT DATE NOT NULL COMMENT 'Payment due date for this invoice',
+    HINVOICE_AMT DECIMAL(12,2) NOT NULL COMMENT 'Invoice amount in USD',
     HPOLICY_ID INT NOT NULL,
-    CONSTRAINT fk_hinvoice_hpolicy FOREIGN KEY (HPOLICY_ID) REFERENCES RAH_HOME_POLICY(HPOLICY_ID) ON DELETE CASCADE,
-    CONSTRAINT chk_hinv_amt CHECK (HINVOICE_AMT > 0),
-    CONSTRAINT chk_hinv_dt CHECK (HINVOICE_DUE_DT > HINVOICE_DT)
+    CONSTRAINT RAH_HOME_INVOICE_PK PRIMARY KEY (HINVOICE_ID),
+    CONSTRAINT RAH_CHK_HINV_AMT CHECK (HINVOICE_AMT > 0),
+    CONSTRAINT RAH_CHK_HINV_DT CHECK (HINVOICE_DUE_DT > HINVOICE_DT),
+    CONSTRAINT RAH_HOME_POLICY_FKv2 FOREIGN KEY (HPOLICY_ID)
+        REFERENCES RAH_HOME_POLICY (HPOLICY_ID) ON DELETE CASCADE
 );
 
--- Table 6: RAH_HOME_PAYMENT
+-- Core Table 5: RAH_HOME_PAYMENT
 CREATE TABLE RAH_HOME_PAYMENT (
-    HPAYMENT_ID INT PRIMARY KEY,
-    HPAYMENT_DT DATE NOT NULL,
-    HPAYMENT_AMT DECIMAL(12,2) NOT NULL,
-    HPAYMENT_METHOD VARCHAR(10) NOT NULL,
+    HPAYMENT_ID INT NOT NULL COMMENT 'Unique home insurance payment identifier',
+    HPAYMENT_DT DATE NOT NULL COMMENT 'Date the payment was made',
+    HPAYMENT_AMT DECIMAL(12,2) NOT NULL COMMENT 'Payment amount in USD',
+    HPAYMENT_METHOD VARCHAR(10) NOT NULL COMMENT 'Method of payment accepted by NICE',
     HINVOICE_ID INT NOT NULL,
-    CONSTRAINT fk_hpayment_hinvoice FOREIGN KEY (HINVOICE_ID) REFERENCES RAH_HOME_INVOICE(HINVOICE_ID) ON DELETE CASCADE,
-    CONSTRAINT chk_hpay_amt CHECK (HPAYMENT_AMT > 0),
-    CONSTRAINT chk_hpay_method CHECK (HPAYMENT_METHOD IN ('PayPal', 'Credit', 'Debit', 'Check'))
+    CONSTRAINT RAH_HOME_PAYMENT_PK PRIMARY KEY (HPAYMENT_ID),
+    CONSTRAINT RAH_CHK_HPAY_AMT CHECK (HPAYMENT_AMT > 0),
+    CONSTRAINT RAH_CHK_HPAY_MTD CHECK (HPAYMENT_METHOD IN ('PayPal','Credit','Debit','Check')),
+    CONSTRAINT RAH_HOME_INVOICE_FK FOREIGN KEY (HINVOICE_ID)
+        REFERENCES RAH_HOME_INVOICE (HINVOICE_ID) ON DELETE CASCADE
 );
 
--- Table 7: RAH_AUTO_POLICY
+-- Core Table 6: RAH_AUTO_POLICY
 CREATE TABLE RAH_AUTO_POLICY (
-    APOLICY_ID INT PRIMARY KEY,
-    APOLICY_START_DT DATE NOT NULL,
-    APOLICY_END_DT DATE NOT NULL,
-    APREMIUM_AMT DECIMAL(12,2) NOT NULL,
-    APOLICY_STATUS CHAR(1) NOT NULL,
-    CUST_ID INT NOT NULL,
-    CONSTRAINT fk_apolicy_cust FOREIGN KEY (CUST_ID) REFERENCES RAH_CUSTOMER(CUST_ID) ON DELETE CASCADE,
-    CONSTRAINT chk_apolicy_dt CHECK (APOLICY_END_DT > APOLICY_START_DT),
-    CONSTRAINT chk_apremium CHECK (APREMIUM_AMT > 0),
-    CONSTRAINT chk_apolicy_status CHECK (APOLICY_STATUS IN ('C', 'E'))
+    APOLICY_ID INT NOT NULL COMMENT 'Unique auto insurance policy identifier',
+    APOLICY_START_DT DATE NOT NULL COMMENT 'Auto insurance policy start date',
+    APOLICY_END_DT DATE NOT NULL COMMENT 'Auto insurance policy end date; must be after start date',
+    APREMIUM_AMT DECIMAL(12,2) NOT NULL COMMENT 'Auto insurance premium amount in USD',
+    APOLICY_STATUS CHAR(1) NOT NULL COMMENT 'C=Current, E=Expired',
+    CUST_ID INT NOT NULL COMMENT 'System-generated unique customer identifier',
+    CUST_TYPE CHAR(1) NOT NULL DEFAULT 'A' COMMENT 'Must be A for auto policies',
+    CONSTRAINT RAH_AUTO_POLICY_PK PRIMARY KEY (APOLICY_ID),
+    CONSTRAINT RAH_AUTO_POLICY_UK UNIQUE (APOLICY_ID),
+    CONSTRAINT RAH_CHK_APOL_DT CHECK (APOLICY_END_DT > APOLICY_START_DT),
+    CONSTRAINT RAH_CHK_APREM CHECK (APREMIUM_AMT > 0),
+    CONSTRAINT RAH_CHK_APOL_ST CHECK (APOLICY_STATUS IN ('C','E')),
+    CONSTRAINT RAH_AUTO_POLICY_CK_4 CHECK (CUST_TYPE = 'A'),
+    CONSTRAINT RAH_CUSTOMER_FKv1 FOREIGN KEY (CUST_ID, CUST_TYPE)
+        REFERENCES RAH_CUSTOMER (CUST_ID, CUST_TYPE) ON DELETE CASCADE
 );
 
--- Table 8: RAH_AUTO_INVOICE
+-- Core Table 7: RAH_AUTO_INVOICE
 CREATE TABLE RAH_AUTO_INVOICE (
-    AINVOICE_ID INT PRIMARY KEY,
-    AINVOICE_DT DATE NOT NULL,
-    AINVOICE_DUE_DT DATE NOT NULL,
-    AINVOICE_AMT DECIMAL(12,2) NOT NULL,
+    AINVOICE_ID INT NOT NULL COMMENT 'Unique auto insurance invoice identifier',
+    AINVOICE_DT DATE NOT NULL COMMENT 'Date the invoice was generated',
+    AINVOICE_DUE_DT DATE NOT NULL COMMENT 'Payment due date for this invoice',
+    AINVOICE_AMT DECIMAL(12,2) NOT NULL COMMENT 'Invoice amount in USD',
     APOLICY_ID INT NOT NULL,
-    CONSTRAINT fk_ainvoice_apolicy FOREIGN KEY (APOLICY_ID) REFERENCES RAH_AUTO_POLICY(APOLICY_ID) ON DELETE CASCADE,
-    CONSTRAINT chk_ainv_amt CHECK (AINVOICE_AMT > 0),
-    CONSTRAINT chk_ainv_dt CHECK (AINVOICE_DUE_DT > AINVOICE_DT)
+    CONSTRAINT RAH_AUTO_INVOICE_PK PRIMARY KEY (AINVOICE_ID),
+    CONSTRAINT RAH_CHK_AINV_AMT CHECK (AINVOICE_AMT > 0),
+    CONSTRAINT RAH_CHK_AINV_DT CHECK (AINVOICE_DUE_DT > AINVOICE_DT),
+    CONSTRAINT RAH_AUTO_POLICY_FKv2 FOREIGN KEY (APOLICY_ID)
+        REFERENCES RAH_AUTO_POLICY (APOLICY_ID) ON DELETE CASCADE
 );
 
--- Table 9: RAH_AUTO_PAYMENT
+-- Core Table 8: RAH_AUTO_PAYMENT
 CREATE TABLE RAH_AUTO_PAYMENT (
-    APAYMENT_ID INT PRIMARY KEY,
-    APAYMENT_DT DATE NOT NULL,
-    APAYMENT_AMT DECIMAL(12,2) NOT NULL,
-    APAYMENT_METHOD VARCHAR(10) NOT NULL,
+    APAYMENT_ID INT NOT NULL COMMENT 'Unique auto insurance payment identifier',
+    APAYMENT_DT DATE NOT NULL COMMENT 'Date the payment was made',
+    APAYMENT_AMT DECIMAL(12,2) NOT NULL COMMENT 'Payment amount in USD',
+    APAYMENT_METHOD VARCHAR(10) NOT NULL COMMENT 'Method of payment accepted by NICE',
     AINVOICE_ID INT NOT NULL,
-    CONSTRAINT fk_apayment_ainvoice FOREIGN KEY (AINVOICE_ID) REFERENCES RAH_AUTO_INVOICE(AINVOICE_ID) ON DELETE CASCADE,
-    CONSTRAINT chk_apay_amt CHECK (APAYMENT_AMT > 0),
-    CONSTRAINT chk_apay_method CHECK (APAYMENT_METHOD IN ('PayPal', 'Credit', 'Debit', 'Check'))
+    CONSTRAINT RAH_AUTO_PAYMENT_PK PRIMARY KEY (APAYMENT_ID),
+    CONSTRAINT RAH_CHK_APAY_AMT CHECK (APAYMENT_AMT > 0),
+    CONSTRAINT RAH_CHK_APAY_MTD CHECK (APAYMENT_METHOD IN ('PayPal','Credit','Debit','Check')),
+    CONSTRAINT RAH_AUTO_INVOICE_FK FOREIGN KEY (AINVOICE_ID)
+        REFERENCES RAH_AUTO_INVOICE (AINVOICE_ID) ON DELETE CASCADE
 );
 
--- Table 10: RAH_VEHICLE
+-- Core Table 9: RAH_VEHICLE
 CREATE TABLE RAH_VEHICLE (
-    VEHICLE_ID INT PRIMARY KEY,
-    VEHICLE_VIN VARCHAR(17) NOT NULL UNIQUE,
-    VEHICLE_MAKE VARCHAR(50) NOT NULL,
-    VEHICLE_MODEL VARCHAR(50) NOT NULL,
-    VEHICLE_YEAR SMALLINT NOT NULL,
-    VEHICLE_STATUS CHAR(1) NOT NULL,
+    VEHICLE_ID INT NOT NULL COMMENT 'System-generated unique vehicle identifier',
+    VEHICLE_VIN VARCHAR(17) NOT NULL COMMENT 'Vehicle Identification Number; unique per vehicle',
+    VEHICLE_MAKE VARCHAR(50) NOT NULL COMMENT 'Manufacturer/make of vehicle',
+    VEHICLE_MODEL VARCHAR(50) NOT NULL COMMENT 'Model of vehicle',
+    VEHICLE_YEAR SMALLINT NOT NULL COMMENT 'Year of vehicle manufacture',
+    VEHICLE_STATUS CHAR(1) NOT NULL COMMENT 'L=Leased, F=Financed, O=Owned',
     APOLICY_ID INT NOT NULL,
-    CONSTRAINT fk_vehicle_apolicy FOREIGN KEY (APOLICY_ID) REFERENCES RAH_AUTO_POLICY(APOLICY_ID) ON DELETE CASCADE,
-    CONSTRAINT chk_veh_year CHECK (VEHICLE_YEAR >= 1886),
-    CONSTRAINT chk_vin_len CHECK (CHAR_LENGTH(VEHICLE_VIN) = 17),
-    CONSTRAINT chk_vehicle_status CHECK (VEHICLE_STATUS IN ('L', 'F', 'O'))
+    CONSTRAINT RAH_VEHICLE_PK PRIMARY KEY (VEHICLE_ID),
+    CONSTRAINT RAH_VEHICLE__UN UNIQUE (VEHICLE_VIN),
+    CONSTRAINT RAH_CHK_VEH_YEAR CHECK (VEHICLE_YEAR >= 1886),
+    CONSTRAINT RAH_CHK_VEH_STAT CHECK (VEHICLE_STATUS IN ('L','F','O')),
+    CONSTRAINT RAH_CHK_VIN_LEN CHECK (CHAR_LENGTH(VEHICLE_VIN) = 17),
+    CONSTRAINT RAH_AUTO_POLICY_FK FOREIGN KEY (APOLICY_ID)
+        REFERENCES RAH_AUTO_POLICY (APOLICY_ID) ON DELETE CASCADE
 );
 
--- Table 11: RAH_DRIVER
+-- Core Table 10: RAH_DRIVER
 CREATE TABLE RAH_DRIVER (
-    DRIVER_ID INT PRIMARY KEY,
-    DRIVER_LICENSE_NO VARCHAR(20) NOT NULL UNIQUE,
-    DRIVER_FNAME VARCHAR(50) NOT NULL,
-    DRIVER_LNAME VARCHAR(50) NOT NULL,
-    DRIVER_AGE INT NOT NULL,
-    CONSTRAINT chk_driver_age CHECK (DRIVER_AGE >= 16)
-);
-
--- Table 12: RAH_VEHICLE_DRIVER
-CREATE TABLE RAH_VEHICLE_DRIVER (
+    DRIVER_ID INT NOT NULL COMMENT 'System-generated unique driver identifier',
+    DRIVER_LICENSE_NO VARCHAR(20) NOT NULL COMMENT 'Driver license number; unique per driver',
+    DRIVER_FNAME VARCHAR(50) NOT NULL COMMENT 'Driver first name',
+    DRIVER_LNAME VARCHAR(50) NOT NULL COMMENT 'Driver last name',
+    DRIVER_AGE INT NOT NULL COMMENT 'Age of the driver; must be at least 16 to drive',
     VEHICLE_ID INT NOT NULL,
-    DRIVER_ID INT NOT NULL,
-    PRIMARY KEY (VEHICLE_ID, DRIVER_ID),
-    CONSTRAINT fk_vd_vehicle FOREIGN KEY (VEHICLE_ID) REFERENCES RAH_VEHICLE(VEHICLE_ID) ON DELETE CASCADE,
-    CONSTRAINT fk_vd_driver FOREIGN KEY (DRIVER_ID) REFERENCES RAH_DRIVER(DRIVER_ID) ON DELETE CASCADE
+    CONSTRAINT RAH_DRIVER_PK PRIMARY KEY (DRIVER_ID),
+    CONSTRAINT RAH_DRIVER__UN UNIQUE (DRIVER_LICENSE_NO),
+    CONSTRAINT RAH_CHK_DRV_AGE CHECK (DRIVER_AGE >= 16),
+    CONSTRAINT RAH_VEHICLE_FK FOREIGN KEY (VEHICLE_ID)
+        REFERENCES RAH_VEHICLE (VEHICLE_ID) ON DELETE CASCADE
 );
 
--- Table 13: RAH_USER (New for Part 2)
+-- Application Table 11: RAH_USER
 CREATE TABLE RAH_USER (
     USER_ID INT AUTO_INCREMENT PRIMARY KEY,
     USERNAME VARCHAR(50) NOT NULL UNIQUE,
@@ -183,20 +198,20 @@ CREATE TABLE RAH_USER (
     ACCOUNT_LOCKED TINYINT DEFAULT 0,
     LAST_LOGIN DATETIME NULL,
     CREATED_AT DATETIME DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_user_cust FOREIGN KEY (CUST_ID) REFERENCES RAH_CUSTOMER(CUST_ID) ON DELETE SET NULL
+    CONSTRAINT RAH_USER_CUSTOMER_FK FOREIGN KEY (CUST_ID) REFERENCES RAH_CUSTOMER(CUST_ID) ON DELETE SET NULL
 );
 
--- Table 14: RAH_LOGIN_HISTORY (New for Part 2)
+-- Application Table 12: RAH_LOGIN_HISTORY
 CREATE TABLE RAH_LOGIN_HISTORY (
     LOG_ID INT AUTO_INCREMENT PRIMARY KEY,
     USER_ID INT NOT NULL,
     LOGIN_DT DATETIME NOT NULL,
     IP_ADDRESS VARCHAR(45),
     SUCCESS TINYINT NOT NULL,
-    CONSTRAINT fk_loghistory_user FOREIGN KEY (USER_ID) REFERENCES RAH_USER(USER_ID) ON DELETE CASCADE
+    CONSTRAINT RAH_LOGIN_HISTORY_USER_FK FOREIGN KEY (USER_ID) REFERENCES RAH_USER(USER_ID) ON DELETE CASCADE
 );
 
--- Table 15: RAH_POLICY_AUDIT (New for Part 2)
+-- Application Table 13: RAH_POLICY_AUDIT
 CREATE TABLE RAH_POLICY_AUDIT (
     AUDIT_ID INT AUTO_INCREMENT PRIMARY KEY,
     TABLE_NAME VARCHAR(50) NOT NULL,
@@ -208,7 +223,7 @@ CREATE TABLE RAH_POLICY_AUDIT (
     CHANGED_AT DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- Table 16: RAH_PASSWORD_RESET (New for Part 2)
+-- Application Table 14: RAH_PASSWORD_RESET
 CREATE TABLE RAH_PASSWORD_RESET (
     RESET_ID INT AUTO_INCREMENT PRIMARY KEY,
     USER_ID INT NOT NULL,
@@ -216,7 +231,7 @@ CREATE TABLE RAH_PASSWORD_RESET (
     EXPIRES_AT DATETIME NOT NULL,
     USED TINYINT DEFAULT 0,
     CREATED_AT DATETIME DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_pwreset_user FOREIGN KEY (USER_ID) REFERENCES RAH_USER(USER_ID) ON DELETE CASCADE
+    CONSTRAINT RAH_PASSWORD_RESET_USER_FK FOREIGN KEY (USER_ID) REFERENCES RAH_USER(USER_ID) ON DELETE CASCADE
 );
 
 
@@ -230,14 +245,17 @@ CREATE INDEX idx_customer_state ON RAH_CUSTOMER(STATE);
 -- Frequent filtering by city for geographic analytics
 CREATE INDEX idx_customer_city ON RAH_CUSTOMER(CITY);
 
+-- Discriminator filtering for the new arc-based customer model
+CREATE INDEX idx_customer_type ON RAH_CUSTOMER(CUST_TYPE);
+
 -- Join optimization: finding all home policies for a customer
-CREATE INDEX idx_home_policy_cust ON RAH_HOME_POLICY(CUST_ID);
+CREATE INDEX idx_home_policy_cust ON RAH_HOME_POLICY(CUST_ID, CUST_TYPE);
 
 -- Status filtering: active vs expired policy lookups
 CREATE INDEX idx_home_policy_status ON RAH_HOME_POLICY(HPOLICY_STATUS);
 
 -- Join optimization: finding all auto policies for a customer
-CREATE INDEX idx_auto_policy_cust ON RAH_AUTO_POLICY(CUST_ID);
+CREATE INDEX idx_auto_policy_cust ON RAH_AUTO_POLICY(CUST_ID, CUST_TYPE);
 
 -- Status filtering: active vs expired auto policy lookups
 CREATE INDEX idx_auto_policy_status ON RAH_AUTO_POLICY(APOLICY_STATUS);
@@ -250,6 +268,9 @@ CREATE INDEX idx_auto_invoice_policy ON RAH_AUTO_INVOICE(APOLICY_ID);
 
 -- Join optimization: finding vehicles under an auto policy
 CREATE INDEX idx_vehicle_policy ON RAH_VEHICLE(APOLICY_ID);
+
+-- Join optimization: finding drivers assigned directly to a vehicle
+CREATE INDEX idx_driver_vehicle ON RAH_DRIVER(VEHICLE_ID);
 
 -- Role-based query optimization for user authentication
 CREATE INDEX idx_user_role ON RAH_USER(ROLE);
@@ -326,14 +347,14 @@ BEGIN
         SELECT CUST_ID INTO v_cust_id FROM RAH_HOME_POLICY WHERE HPOLICY_ID = p_old_policy_id;
         UPDATE RAH_HOME_POLICY SET HPOLICY_STATUS = 'E' WHERE HPOLICY_ID = p_old_policy_id;
         SELECT COALESCE(MAX(HPOLICY_ID), 0) + 1 INTO v_new_id FROM RAH_HOME_POLICY;
-        INSERT INTO RAH_HOME_POLICY (HPOLICY_ID, HPOLICY_START_DT, HPOLICY_END_DT, HPREMIUM_AMT, HPOLICY_STATUS, CUST_ID)
-        VALUES (v_new_id, p_new_start, p_new_end, p_new_premium, 'C', v_cust_id);
+        INSERT INTO RAH_HOME_POLICY (HPOLICY_ID, HPOLICY_START_DT, HPOLICY_END_DT, HPREMIUM_AMT, HPOLICY_STATUS, CUST_ID, CUST_TYPE)
+        VALUES (v_new_id, p_new_start, p_new_end, p_new_premium, 'C', v_cust_id, 'H');
     ELSEIF p_policy_type = 'auto' THEN
         SELECT CUST_ID INTO v_cust_id FROM RAH_AUTO_POLICY WHERE APOLICY_ID = p_old_policy_id;
         UPDATE RAH_AUTO_POLICY SET APOLICY_STATUS = 'E' WHERE APOLICY_ID = p_old_policy_id;
         SELECT COALESCE(MAX(APOLICY_ID), 0) + 1 INTO v_new_id FROM RAH_AUTO_POLICY;
-        INSERT INTO RAH_AUTO_POLICY (APOLICY_ID, APOLICY_START_DT, APOLICY_END_DT, APREMIUM_AMT, APOLICY_STATUS, CUST_ID)
-        VALUES (v_new_id, p_new_start, p_new_end, p_new_premium, 'C', v_cust_id);
+        INSERT INTO RAH_AUTO_POLICY (APOLICY_ID, APOLICY_START_DT, APOLICY_END_DT, APREMIUM_AMT, APOLICY_STATUS, CUST_ID, CUST_TYPE)
+        VALUES (v_new_id, p_new_start, p_new_end, p_new_premium, 'C', v_cust_id, 'A');
     ELSE
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Invalid policy type. Use home or auto.';
     END IF;
@@ -346,11 +367,9 @@ END //
 CREATE PROCEDURE sp_get_customer_summary(IN p_cust_id INT)
 BEGIN
     -- Customer info
-    SELECT c.*, GROUP_CONCAT(ct.CUST_TYPE) AS customer_types
+    SELECT c.*
     FROM RAH_CUSTOMER c
-    LEFT JOIN RAH_CUST_TYPE ct ON c.CUST_ID = ct.CUST_ID
-    WHERE c.CUST_ID = p_cust_id
-    GROUP BY c.CUST_ID;
+    WHERE c.CUST_ID = p_cust_id;
 
     -- Home policies
     SELECT hp.*, h.HOME_TYPE, h.HOME_PURCHASE_VAL, h.HOME_AREA_SQFT
@@ -468,6 +487,51 @@ END //
 -- 5. TRIGGERS (Audit Trail)
 -- ============================================================
 
+-- Oracle arc triggers converted to MySQL SIGNAL logic.
+CREATE TRIGGER ARC_FKArc_1_RAH_HOME_POLICY_BI
+BEFORE INSERT ON RAH_HOME_POLICY
+FOR EACH ROW
+BEGIN
+    IF NEW.CUST_TYPE <> 'H' OR NOT EXISTS (
+        SELECT 1 FROM RAH_CUSTOMER c WHERE c.CUST_ID = NEW.CUST_ID AND c.CUST_TYPE = 'H'
+    ) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Home policy customer must have CUST_TYPE H';
+    END IF;
+END //
+
+CREATE TRIGGER ARC_FKArc_1_RAH_HOME_POLICY_BU
+BEFORE UPDATE ON RAH_HOME_POLICY
+FOR EACH ROW
+BEGIN
+    IF NEW.CUST_TYPE <> 'H' OR NOT EXISTS (
+        SELECT 1 FROM RAH_CUSTOMER c WHERE c.CUST_ID = NEW.CUST_ID AND c.CUST_TYPE = 'H'
+    ) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Home policy customer must have CUST_TYPE H';
+    END IF;
+END //
+
+CREATE TRIGGER ARC_FKArc_1_RAH_AUTO_POLICY_BI
+BEFORE INSERT ON RAH_AUTO_POLICY
+FOR EACH ROW
+BEGIN
+    IF NEW.CUST_TYPE <> 'A' OR NOT EXISTS (
+        SELECT 1 FROM RAH_CUSTOMER c WHERE c.CUST_ID = NEW.CUST_ID AND c.CUST_TYPE = 'A'
+    ) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Auto policy customer must have CUST_TYPE A';
+    END IF;
+END //
+
+CREATE TRIGGER ARC_FKArc_1_RAH_AUTO_POLICY_BU
+BEFORE UPDATE ON RAH_AUTO_POLICY
+FOR EACH ROW
+BEGIN
+    IF NEW.CUST_TYPE <> 'A' OR NOT EXISTS (
+        SELECT 1 FROM RAH_CUSTOMER c WHERE c.CUST_ID = NEW.CUST_ID AND c.CUST_TYPE = 'A'
+    ) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Auto policy customer must have CUST_TYPE A';
+    END IF;
+END //
+
 -- Home Policy Audit Triggers
 CREATE TRIGGER trg_home_policy_audit_insert
 AFTER INSERT ON RAH_HOME_POLICY
@@ -555,57 +619,56 @@ DELIMITER ;
 -- 6. SAMPLE DATA (15+ rows per table)
 -- ============================================================
 
--- Customers (20 records)
+-- Customers (27 records; duplicate people model separate home/auto customer roles)
 INSERT INTO RAH_CUSTOMER VALUES
-(1, 'James', 'Michael', 'Anderson', '142 Oak Street', 'Apt 3B', 'Brooklyn', 'NY', '11201', 'M', 'M'),
-(2, 'Sarah', 'Elizabeth', 'Martinez', '89 Elm Avenue', NULL, 'Manhattan', 'NY', '10001', 'F', 'S'),
-(3, 'Robert', NULL, 'Johnson', '567 Pine Road', 'Suite 200', 'Jersey City', 'NJ', '07302', 'M', 'M'),
-(4, 'Emily', 'Rose', 'Williams', '234 Maple Drive', NULL, 'Stamford', 'CT', '06901', 'F', 'M'),
-(5, 'Michael', 'David', 'Brown', '891 Cedar Lane', NULL, 'Philadelphia', 'PA', '19103', 'M', 'S'),
-(6, 'Jessica', NULL, 'Davis', '456 Birch Street', 'Floor 2', 'Boston', 'MA', '02101', 'F', 'W'),
-(7, 'William', 'Thomas', 'Garcia', '123 Spruce Ave', NULL, 'Newark', 'NJ', '07101', 'M', 'M'),
-(8, 'Amanda', 'Lynn', 'Miller', '678 Walnut Blvd', NULL, 'Hartford', 'CT', '06103', 'F', 'S'),
-(9, 'Daniel', NULL, 'Wilson', '345 Ash Court', 'Unit 5', 'Hoboken', 'NJ', '07030', 'M', 'S'),
-(10, 'Jennifer', 'Marie', 'Taylor', '912 Poplar Way', NULL, 'White Plains', 'NY', '10601', 'F', 'M'),
-(11, 'Christopher', 'James', 'Thomas', '567 Hickory Lane', NULL, 'Cambridge', 'MA', '02139', 'M', 'M'),
-(12, 'Ashley', NULL, 'Jackson', '234 Dogwood Drive', 'Apt 12A', 'Queens', 'NY', '11375', 'F', 'S'),
-(13, 'Matthew', 'Ryan', 'White', '891 Magnolia St', NULL, 'Trenton', 'NJ', '08608', 'M', 'W'),
-(14, 'Stephanie', 'Ann', 'Harris', '456 Sycamore Rd', NULL, 'New Haven', 'CT', '06510', 'F', 'M'),
-(15, 'Andrew', NULL, 'Clark', '123 Chestnut Ave', 'Suite 100', 'Providence', 'RI', '02903', 'M', 'S'),
-(16, 'Nicole', 'Grace', 'Lewis', '678 Willow Lane', NULL, 'Bronx', 'NY', '10451', 'F', 'M'),
-(17, 'Joshua', 'Allen', 'Robinson', '345 Redwood Ct', NULL, 'Edison', 'NJ', '08817', 'M', 'S'),
-(18, 'Lauren', NULL, 'Walker', '912 Cypress Blvd', 'Apt 7C', 'Yonkers', 'NY', '10701', 'F', 'W'),
-(19, 'Kevin', 'Patrick', 'Young', '567 Juniper Way', NULL, 'Worcester', 'MA', '01608', 'M', 'M'),
-(20, 'Rachel', 'Anne', 'King', '234 Aspen Drive', NULL, 'Bridgeport', 'CT', '06604', 'F', 'S');
-
--- Customer Types (30 records - some customers have both)
-INSERT INTO RAH_CUST_TYPE VALUES
-(1, 'H'), (1, 'A'), (2, 'H'), (2, 'A'), (3, 'A'), (4, 'H'),
-(5, 'A'), (5, 'H'), (6, 'H'), (7, 'A'), (8, 'H'), (8, 'A'),
-(9, 'A'), (10, 'H'), (10, 'A'), (11, 'H'), (12, 'A'), (13, 'H'),
-(14, 'A'), (14, 'H'), (15, 'A'), (16, 'H'), (17, 'A'), (18, 'H'),
-(19, 'A'), (19, 'H'), (20, 'A');
+(1, 'H', 'James', 'Michael', 'Anderson', '142 Oak Street', 'Apt 3B', 'Brooklyn', 'NY', '11201', 'M', 'M'),
+(2, 'H', 'Sarah', 'Elizabeth', 'Martinez', '89 Elm Avenue', NULL, 'Manhattan', 'NY', '10001', 'F', 'S'),
+(3, 'A', 'Robert', NULL, 'Johnson', '567 Pine Road', 'Suite 200', 'Jersey City', 'NJ', '07302', 'M', 'M'),
+(4, 'H', 'Emily', 'Rose', 'Williams', '234 Maple Drive', NULL, 'Stamford', 'CT', '06901', 'F', 'M'),
+(5, 'A', 'Michael', 'David', 'Brown', '891 Cedar Lane', NULL, 'Philadelphia', 'PA', '19103', 'M', 'S'),
+(6, 'H', 'Jessica', NULL, 'Davis', '456 Birch Street', 'Floor 2', 'Boston', 'MA', '02101', 'F', 'W'),
+(7, 'A', 'William', 'Thomas', 'Garcia', '123 Spruce Ave', NULL, 'Newark', 'NJ', '07101', 'M', 'M'),
+(8, 'H', 'Amanda', 'Lynn', 'Miller', '678 Walnut Blvd', NULL, 'Hartford', 'CT', '06103', 'F', 'S'),
+(9, 'A', 'Daniel', NULL, 'Wilson', '345 Ash Court', 'Unit 5', 'Hoboken', 'NJ', '07030', 'M', 'S'),
+(10, 'H', 'Jennifer', 'Marie', 'Taylor', '912 Poplar Way', NULL, 'White Plains', 'NY', '10601', 'F', 'M'),
+(11, 'H', 'Christopher', 'James', 'Thomas', '567 Hickory Lane', NULL, 'Cambridge', 'MA', '02139', 'M', 'M'),
+(12, 'A', 'Ashley', NULL, 'Jackson', '234 Dogwood Drive', 'Apt 12A', 'Queens', 'NY', '11375', 'F', 'S'),
+(13, 'H', 'Matthew', 'Ryan', 'White', '891 Magnolia St', NULL, 'Trenton', 'NJ', '08608', 'M', 'W'),
+(14, 'H', 'Stephanie', 'Ann', 'Harris', '456 Sycamore Rd', NULL, 'New Haven', 'CT', '06510', 'F', 'M'),
+(15, 'A', 'Andrew', NULL, 'Clark', '123 Chestnut Ave', 'Suite 100', 'Providence', 'RI', '02903', 'M', 'S'),
+(16, 'H', 'Nicole', 'Grace', 'Lewis', '678 Willow Lane', NULL, 'Bronx', 'NY', '10451', 'F', 'M'),
+(17, 'A', 'Joshua', 'Allen', 'Robinson', '345 Redwood Ct', NULL, 'Edison', 'NJ', '08817', 'M', 'S'),
+(18, 'H', 'Lauren', NULL, 'Walker', '912 Cypress Blvd', 'Apt 7C', 'Yonkers', 'NY', '10701', 'F', 'W'),
+(19, 'H', 'Kevin', 'Patrick', 'Young', '567 Juniper Way', NULL, 'Worcester', 'MA', '01608', 'M', 'M'),
+(20, 'A', 'Rachel', 'Anne', 'King', '234 Aspen Drive', NULL, 'Bridgeport', 'CT', '06604', 'F', 'S'),
+(21, 'A', 'James', 'Michael', 'Anderson', '142 Oak Street', 'Apt 3B', 'Brooklyn', 'NY', '11201', 'M', 'M'),
+(22, 'A', 'Sarah', 'Elizabeth', 'Martinez', '89 Elm Avenue', NULL, 'Manhattan', 'NY', '10001', 'F', 'S'),
+(23, 'H', 'Michael', 'David', 'Brown', '891 Cedar Lane', NULL, 'Philadelphia', 'PA', '19103', 'M', 'S'),
+(24, 'A', 'Amanda', 'Lynn', 'Miller', '678 Walnut Blvd', NULL, 'Hartford', 'CT', '06103', 'F', 'S'),
+(25, 'A', 'Jennifer', 'Marie', 'Taylor', '912 Poplar Way', NULL, 'White Plains', 'NY', '10601', 'F', 'M'),
+(26, 'A', 'Stephanie', 'Ann', 'Harris', '456 Sycamore Rd', NULL, 'New Haven', 'CT', '06510', 'F', 'M'),
+(27, 'A', 'Kevin', 'Patrick', 'Young', '567 Juniper Way', NULL, 'Worcester', 'MA', '01608', 'M', 'M');
 
 -- Home Policies (18 records)
 INSERT INTO RAH_HOME_POLICY VALUES
-(1, '2022-01-15', '2023-01-15', 1250.00, 'E', 1),
-(2, '2023-01-15', '2024-01-15', 1350.00, 'E', 1),
-(3, '2023-03-01', '2024-03-01', 980.00, 'E', 2),
-(4, '2024-03-01', '2025-03-01', 1050.00, 'C', 2),
-(5, '2022-06-10', '2023-06-10', 1500.00, 'E', 4),
-(6, '2023-06-10', '2024-06-10', 1620.00, 'C', 4),
-(7, '2023-09-01', '2024-09-01', 890.00, 'C', 5),
-(8, '2024-01-01', '2025-01-01', 1100.00, 'C', 6),
-(9, '2022-11-15', '2023-11-15', 1450.00, 'E', 8),
-(10, '2023-11-15', '2024-11-15', 1550.00, 'C', 8),
-(11, '2024-02-01', '2025-02-01', 2100.00, 'C', 10),
-(12, '2023-07-01', '2024-07-01', 1780.00, 'C', 11),
-(13, '2024-04-15', '2025-04-15', 920.00, 'C', 13),
-(14, '2023-08-01', '2024-08-01', 1350.00, 'C', 14),
-(15, '2024-05-01', '2025-05-01', 1680.00, 'C', 16),
-(16, '2023-12-01', '2024-12-01', 1200.00, 'C', 18),
-(17, '2024-06-01', '2025-06-01', 1890.00, 'C', 19),
-(18, '2024-01-15', '2026-01-15', 1420.00, 'C', 1);
+(1, '2022-01-15', '2023-01-15', 1250.00, 'E', 1, 'H'),
+(2, '2023-01-15', '2024-01-15', 1350.00, 'E', 1, 'H'),
+(3, '2023-03-01', '2024-03-01', 980.00, 'E', 2, 'H'),
+(4, '2024-03-01', '2025-03-01', 1050.00, 'C', 2, 'H'),
+(5, '2022-06-10', '2023-06-10', 1500.00, 'E', 4, 'H'),
+(6, '2023-06-10', '2024-06-10', 1620.00, 'C', 4, 'H'),
+(7, '2023-09-01', '2024-09-01', 890.00, 'C', 23, 'H'),
+(8, '2024-01-01', '2025-01-01', 1100.00, 'C', 6, 'H'),
+(9, '2022-11-15', '2023-11-15', 1450.00, 'E', 8, 'H'),
+(10, '2023-11-15', '2024-11-15', 1550.00, 'C', 8, 'H'),
+(11, '2024-02-01', '2025-02-01', 2100.00, 'C', 10, 'H'),
+(12, '2023-07-01', '2024-07-01', 1780.00, 'C', 11, 'H'),
+(13, '2024-04-15', '2025-04-15', 920.00, 'C', 13, 'H'),
+(14, '2023-08-01', '2024-08-01', 1350.00, 'C', 14, 'H'),
+(15, '2024-05-01', '2025-05-01', 1680.00, 'C', 16, 'H'),
+(16, '2023-12-01', '2024-12-01', 1200.00, 'C', 18, 'H'),
+(17, '2024-06-01', '2025-06-01', 1890.00, 'C', 19, 'H'),
+(18, '2024-01-15', '2026-01-15', 1420.00, 'C', 1, 'H');
 
 -- Homes (18 records)
 INSERT INTO RAH_HOME VALUES
@@ -681,24 +744,24 @@ INSERT INTO RAH_HOME_PAYMENT VALUES
 
 -- Auto Policies (18 records)
 INSERT INTO RAH_AUTO_POLICY VALUES
-(1, '2022-03-01', '2023-03-01', 850.00, 'E', 1),
-(2, '2023-03-01', '2024-03-01', 920.00, 'E', 1),
-(3, '2023-05-15', '2024-05-15', 750.00, 'C', 2),
-(4, '2022-08-01', '2023-08-01', 680.00, 'E', 3),
-(5, '2023-08-01', '2024-08-01', 730.00, 'C', 3),
-(6, '2023-04-01', '2024-04-01', 1100.00, 'C', 5),
-(7, '2024-01-15', '2025-01-15', 990.00, 'C', 7),
-(8, '2023-10-01', '2024-10-01', 860.00, 'C', 8),
-(9, '2024-02-01', '2025-02-01', 780.00, 'C', 9),
-(10, '2023-06-01', '2024-06-01', 1200.00, 'C', 10),
-(11, '2024-03-01', '2025-03-01', 650.00, 'C', 12),
-(12, '2023-11-01', '2024-11-01', 1050.00, 'C', 14),
-(13, '2024-04-01', '2025-04-01', 820.00, 'C', 15),
-(14, '2024-05-15', '2025-05-15', 940.00, 'C', 17),
-(15, '2023-07-01', '2024-07-01', 1150.00, 'C', 19),
-(16, '2024-06-01', '2025-06-01', 710.00, 'C', 20),
-(17, '2024-03-01', '2026-03-01', 950.00, 'C', 1),
-(18, '2024-07-01', '2025-07-01', 880.00, 'C', 5);
+(1, '2022-03-01', '2023-03-01', 850.00, 'E', 21, 'A'),
+(2, '2023-03-01', '2024-03-01', 920.00, 'E', 21, 'A'),
+(3, '2023-05-15', '2024-05-15', 750.00, 'C', 22, 'A'),
+(4, '2022-08-01', '2023-08-01', 680.00, 'E', 3, 'A'),
+(5, '2023-08-01', '2024-08-01', 730.00, 'C', 3, 'A'),
+(6, '2023-04-01', '2024-04-01', 1100.00, 'C', 5, 'A'),
+(7, '2024-01-15', '2025-01-15', 990.00, 'C', 7, 'A'),
+(8, '2023-10-01', '2024-10-01', 860.00, 'C', 24, 'A'),
+(9, '2024-02-01', '2025-02-01', 780.00, 'C', 9, 'A'),
+(10, '2023-06-01', '2024-06-01', 1200.00, 'C', 25, 'A'),
+(11, '2024-03-01', '2025-03-01', 650.00, 'C', 12, 'A'),
+(12, '2023-11-01', '2024-11-01', 1050.00, 'C', 26, 'A'),
+(13, '2024-04-01', '2025-04-01', 820.00, 'C', 15, 'A'),
+(14, '2024-05-15', '2025-05-15', 940.00, 'C', 17, 'A'),
+(15, '2023-07-01', '2024-07-01', 1150.00, 'C', 27, 'A'),
+(16, '2024-06-01', '2025-06-01', 710.00, 'C', 20, 'A'),
+(17, '2024-03-01', '2026-03-01', 950.00, 'C', 21, 'A'),
+(18, '2024-07-01', '2025-07-01', 880.00, 'C', 5, 'A');
 
 -- Auto Invoices (25 records)
 INSERT INTO RAH_AUTO_INVOICE VALUES
@@ -774,43 +837,35 @@ INSERT INTO RAH_VEHICLE VALUES
 (19, 'WP0AA2A70CL456789', 'Porsche', '911', 2024, 'O', 17),
 (20, '19XFC2F52NE567890', 'Honda', 'Accord', 2023, 'L', 18);
 
--- Drivers (20 records)
+-- Drivers (20 records; each driver is assigned to one vehicle in the updated DDL)
 INSERT INTO RAH_DRIVER VALUES
-(1, 'DL-NY-001234', 'James', 'Anderson', 35),
-(2, 'DL-NY-005678', 'Maria', 'Anderson', 33),
-(3, 'DL-NY-009012', 'Sarah', 'Martinez', 28),
-(4, 'DL-NJ-001234', 'Robert', 'Johnson', 42),
-(5, 'DL-NJ-005678', 'Linda', 'Johnson', 39),
-(6, 'DL-PA-001234', 'Michael', 'Brown', 31),
-(7, 'DL-NJ-009012', 'William', 'Garcia', 45),
-(8, 'DL-CT-001234', 'Amanda', 'Miller', 26),
-(9, 'DL-NJ-013456', 'Daniel', 'Wilson', 38),
-(10, 'DL-NY-013456', 'Jennifer', 'Taylor', 44),
-(11, 'DL-NY-017890', 'David', 'Taylor', 46),
-(12, 'DL-NY-021234', 'Ashley', 'Jackson', 23),
-(13, 'DL-NJ-017890', 'Matthew', 'White', 52),
-(14, 'DL-CT-005678', 'Stephanie', 'Harris', 36),
-(15, 'DL-RI-001234', 'Andrew', 'Clark', 29),
-(16, 'DL-NJ-021234', 'Joshua', 'Robinson', 33),
-(17, 'DL-MA-001234', 'Kevin', 'Young', 41),
-(18, 'DL-PA-005678', 'Thomas', 'Brown', 19),
-(19, 'DL-CT-009012', 'Rachel', 'King', 25),
-(20, 'DL-NY-025678', 'Nicole', 'Lewis', 37);
-
--- Vehicle-Driver assignments (25 records)
-INSERT INTO RAH_VEHICLE_DRIVER VALUES
-(1, 1), (1, 2), (2, 1), (2, 2), (3, 3),
-(4, 4), (4, 5), (5, 4), (6, 6), (7, 7),
-(8, 7), (9, 8), (10, 9), (11, 10), (11, 11),
-(12, 10), (12, 11), (13, 12), (14, 14), (15, 15),
-(16, 16), (17, 17), (18, 19), (19, 16), (20, 6);
+(1, 'DL-NY-001234', 'James', 'Anderson', 35, 1),
+(2, 'DL-NY-005678', 'Maria', 'Anderson', 33, 1),
+(3, 'DL-NY-009012', 'Sarah', 'Martinez', 28, 3),
+(4, 'DL-NJ-001234', 'Robert', 'Johnson', 42, 4),
+(5, 'DL-NJ-005678', 'Linda', 'Johnson', 39, 4),
+(6, 'DL-PA-001234', 'Michael', 'Brown', 31, 7),
+(7, 'DL-NJ-009012', 'William', 'Garcia', 45, 8),
+(8, 'DL-CT-001234', 'Amanda', 'Miller', 26, 9),
+(9, 'DL-NJ-013456', 'Daniel', 'Wilson', 38, 10),
+(10, 'DL-NY-013456', 'Jennifer', 'Taylor', 44, 11),
+(11, 'DL-NY-017890', 'David', 'Taylor', 46, 12),
+(12, 'DL-NY-021234', 'Ashley', 'Jackson', 23, 13),
+(13, 'DL-NJ-017890', 'Matthew', 'White', 52, 15),
+(14, 'DL-CT-005678', 'Stephanie', 'Harris', 36, 14),
+(15, 'DL-RI-001234', 'Andrew', 'Clark', 29, 15),
+(16, 'DL-NJ-021234', 'Joshua', 'Robinson', 33, 16),
+(17, 'DL-MA-001234', 'Kevin', 'Young', 41, 17),
+(18, 'DL-PA-005678', 'Thomas', 'Brown', 19, 6),
+(19, 'DL-CT-009012', 'Rachel', 'King', 25, 18),
+(20, 'DL-NY-025678', 'Nicole', 'Lewis', 37, 20);
 
 -- Users (bcrypt hash for 'password123')
 -- Hash: $2b$12$Zm6SmkLa9IUX.VA3oYXSPuWCM5zuqpDlxA8KCaexB1Kp743wgvNPS
 INSERT INTO RAH_USER (USERNAME, PASSWORD_HASH, EMAIL, ROLE, CUST_ID, SECURITY_QUESTION, SECURITY_ANSWER_HASH, FAILED_LOGIN_ATTEMPTS, ACCOUNT_LOCKED, LAST_LOGIN) VALUES
 ('employee1', '$2b$12$Zm6SmkLa9IUX.VA3oYXSPuWCM5zuqpDlxA8KCaexB1Kp743wgvNPS', 'employee1@niceinsurance.com', 'employee', NULL, 'What is your favorite color?', '$2b$12$Zm6SmkLa9IUX.VA3oYXSPuWCM5zuqpDlxA8KCaexB1Kp743wgvNPS', 0, 0, '2026-04-06 10:30:00'),
 ('customer1', '$2b$12$Zm6SmkLa9IUX.VA3oYXSPuWCM5zuqpDlxA8KCaexB1Kp743wgvNPS', 'james.anderson@email.com', 'customer', 1, 'What is your pet name?', '$2b$12$Zm6SmkLa9IUX.VA3oYXSPuWCM5zuqpDlxA8KCaexB1Kp743wgvNPS', 0, 0, '2026-04-05 14:20:00'),
-('customer2', '$2b$12$Zm6SmkLa9IUX.VA3oYXSPuWCM5zuqpDlxA8KCaexB1Kp743wgvNPS', 'sarah.martinez@email.com', 'customer', 2, 'What city were you born in?', '$2b$12$Zm6SmkLa9IUX.VA3oYXSPuWCM5zuqpDlxA8KCaexB1Kp743wgvNPS', 0, 0, '2026-04-04 09:15:00');
+('customer2', '$2b$12$Zm6SmkLa9IUX.VA3oYXSPuWCM5zuqpDlxA8KCaexB1Kp743wgvNPS', 'sarah.martinez@email.com', 'customer', 22, 'What city were you born in?', '$2b$12$Zm6SmkLa9IUX.VA3oYXSPuWCM5zuqpDlxA8KCaexB1Kp743wgvNPS', 0, 0, '2026-04-04 09:15:00');
 
 -- Login History
 INSERT INTO RAH_LOGIN_HISTORY (USER_ID, LOGIN_DT, IP_ADDRESS, SUCCESS) VALUES

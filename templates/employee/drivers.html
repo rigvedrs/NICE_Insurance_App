@@ -39,7 +39,7 @@
         <div class="table-responsive">
             <table class="table table-hover mb-0">
                 <thead>
-                    <tr><th>ID</th><th>License #</th><th>Name</th><th>Age</th><th>Assigned Vehicles</th><th>Actions</th></tr>
+                    <tr><th>ID</th><th>License #</th><th>Name</th><th>Age</th><th>Assigned Vehicle</th><th>Actions</th></tr>
                 </thead>
                 <tbody>
                     {% for d in drivers %}
@@ -81,11 +81,11 @@
                     </div>
                     <div class="mt-3"><label class="form-label">Age *</label><input type="number" name="age" class="form-control" min="16" required></div>
                     <div class="mt-3">
-                        <label class="form-label">Assign to Vehicles</label>
-                        <select name="vehicle_ids" class="form-select" multiple size="4">
+                        <label class="form-label">Assign to Vehicle *</label>
+                        <select name="vehicle_id" class="form-select" required>
                             {% for v in vehicles %}<option value="{{ v.VEHICLE_ID }}">{{ v.VEHICLE_YEAR }} {{ v.VEHICLE_MAKE }} {{ v.VEHICLE_MODEL }}</option>{% endfor %}
                         </select>
-                        <small class="text-muted">Hold Ctrl/Cmd to select multiple</small>
+                        <small class="text-muted">The updated database model stores one vehicle per driver record.</small>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -111,6 +111,12 @@
                         <div class="col-md-6"><label class="form-label">Last Name</label><input type="text" name="lname" id="ed_lname" class="form-control" required></div>
                     </div>
                     <div class="mt-3"><label class="form-label">Age</label><input type="number" name="age" id="ed_age" class="form-control" min="16" required></div>
+                    <div class="mt-3">
+                        <label class="form-label">Assigned Vehicle</label>
+                        <select name="vehicle_id" id="ed_vehicle_id" class="form-select" required>
+                            {% for v in vehicles %}<option value="{{ v.VEHICLE_ID }}">{{ v.VEHICLE_YEAR }} {{ v.VEHICLE_MAKE }} {{ v.VEHICLE_MODEL }}</option>{% endfor %}
+                        </select>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -160,6 +166,7 @@ function openEditDriver(d) {
     document.getElementById('ed_fname').value = d.DRIVER_FNAME;
     document.getElementById('ed_lname').value = d.DRIVER_LNAME;
     document.getElementById('ed_age').value = d.DRIVER_AGE;
+    document.getElementById('ed_vehicle_id').value = d.VEHICLE_ID;
     new bootstrap.Modal(document.getElementById('editDriverModal')).show();
 }
 </script>

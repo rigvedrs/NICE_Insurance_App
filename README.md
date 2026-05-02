@@ -131,11 +131,11 @@ mysql -uroot -p < setup_database.sql
 (You'll be prompted for the root password you chose during installation.)
 
 This creates the `nice_insurance` database with:
-- 16 tables (12 original + 4 new for Part 2)
-- 13 strategic indexes with comments
+- 14 tables (10 updated core DDL tables + 4 application extension tables)
+- 15 strategic indexes with comments
 - 4 stored procedures
 - 2 user-defined functions
-- 6 audit triggers
+- 10 triggers (4 converted arc/discriminator triggers + 6 audit triggers)
 - Sample data (15+ rows per table)
 - Pre-configured user accounts
 
@@ -187,8 +187,8 @@ The app starts at **http://localhost:8080**
 | Username    | Password      | Role     | Description              |
 |-------------|---------------|----------|--------------------------|
 | employee1   | password123   | Employee | Full admin access        |
-| customer1   | password123   | Customer | James Anderson (ID: 1)   |
-| customer2   | password123   | Customer | Sarah Martinez (ID: 2)   |
+| customer1   | password123   | Customer | James Anderson, Home customer (ID: 1) |
+| customer2   | password123   | Customer | Sarah Martinez, Auto customer (ID: 22) |
 
 ## Features
 
@@ -202,6 +202,13 @@ The app starts at **http://localhost:8080**
 - Session timeout (30 minutes)
 - Parameterized SQL queries (prevent SQL injection)
 - HTML escaping (prevent XSS)
+
+### Updated Core DDL Model
+- Converted the latest Oracle Data Modeler DDL to MySQL.
+- `RAH_CUSTOMER` now stores a single `CUST_TYPE` discriminator (`H` or `A`) directly on the customer row.
+- `RAH_HOME_POLICY` and `RAH_AUTO_POLICY` now carry their own `CUST_TYPE` column and reference customers through `(CUST_ID, CUST_TYPE)`.
+- Oracle arc triggers were converted to MySQL `BEFORE INSERT` / `BEFORE UPDATE` triggers using `SIGNAL SQLSTATE '45000'`.
+- `RAH_DRIVER` now references `RAH_VEHICLE` directly through `VEHICLE_ID`; the old many-to-many vehicle-driver join table is no longer part of the core model.
 
 ### Customer Portal
 - **Dashboard**: Summary stats, payment history chart, premium distribution chart
@@ -218,7 +225,7 @@ The app starts at **http://localhost:8080**
 - **Invoices**: View all invoices, generate new via stored procedure
 - **Payments**: View all payment records across customers
 - **Vehicles**: Full CRUD with policy assignment
-- **Drivers**: Full CRUD, assign drivers to vehicles
+- **Drivers**: Full CRUD, assign or reassign each driver to a vehicle
 - **Reports**: 7 interactive charts with key business metrics
 - **Index Analysis**: View all custom indexes, run EXPLAIN queries, see performance rationale
 
@@ -236,13 +243,13 @@ The app starts at **http://localhost:8080**
 ### Database Features
 - **Stored Procedures**: sp_process_payment, sp_renew_policy, sp_get_customer_summary, sp_generate_invoice
 - **User Functions**: fn_total_premium, fn_outstanding_balance
-- **Triggers**: 6 audit triggers on home and auto policy tables (INSERT, UPDATE, DELETE)
-- **Indexes**: 13 strategic indexes with documented rationale
+- **Triggers**: 4 arc/discriminator triggers plus 6 audit triggers on home and auto policy tables (INSERT, UPDATE, DELETE)
+- **Indexes**: 15 strategic indexes with documented rationale
 - **EXPLAIN Analysis**: Interactive page showing query execution plans
 
 ### Extra Credit
 - ✅ 6+ data visualization charts with Chart.js
-- ✅ 13 strategic indexes with EXPLAIN analysis page
+- ✅ 15 strategic indexes with EXPLAIN analysis page
 - ✅ Comprehensive security (lockout, login history, CSRF, bcrypt)
 - ✅ 4 stored procedures with transactions
 - ✅ 2 user-defined functions
