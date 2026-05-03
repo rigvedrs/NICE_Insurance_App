@@ -75,7 +75,7 @@
             <form method="POST" action="{{ url_for('employee_add_vehicle') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="modal-body">
-                    <div class="mb-3"><label class="form-label">VIN *</label><input type="text" name="vin" class="form-control" maxlength="17" required></div>
+                    <div class="mb-3"><label class="form-label">VIN *</label><input type="text" name="vin" id="add_vin" class="form-control text-uppercase" maxlength="17" autocomplete="off" required oninput="this.value = this.value.toUpperCase()"></div>
                     <div class="row g-3">
                         <div class="col-md-6"><label class="form-label">Make *</label><input type="text" name="make" class="form-control" required></div>
                         <div class="col-md-6"><label class="form-label">Model *</label><input type="text" name="model" class="form-control" required></div>
@@ -111,7 +111,7 @@
             <form method="POST" id="editVehicleForm">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="modal-body">
-                    <div class="mb-3"><label class="form-label">VIN</label><input type="text" name="vin" id="ev_vin" class="form-control" maxlength="17" required></div>
+                    <div class="mb-3"><label class="form-label">VIN</label><input type="text" name="vin" id="ev_vin" class="form-control text-uppercase" maxlength="17" autocomplete="off" required oninput="this.value = this.value.toUpperCase()"></div>
                     <div class="row g-3">
                         <div class="col-md-6"><label class="form-label">Make</label><input type="text" name="make" id="ev_make" class="form-control" required></div>
                         <div class="col-md-6"><label class="form-label">Model</label><input type="text" name="model" id="ev_model" class="form-control" required></div>
@@ -138,7 +138,7 @@
 <script>
 function openEditVehicle(v) {
     document.getElementById('editVehicleForm').action = '/employee/vehicles/edit/' + v.VEHICLE_ID;
-    document.getElementById('ev_vin').value = v.VEHICLE_VIN;
+    document.getElementById('ev_vin').value = String(v.VEHICLE_VIN || '').toUpperCase();
     document.getElementById('ev_make').value = v.VEHICLE_MAKE;
     document.getElementById('ev_model').value = v.VEHICLE_MODEL;
     document.getElementById('ev_year').value = v.VEHICLE_YEAR;

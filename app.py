@@ -171,6 +171,39 @@ def decimal_default(obj):
     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
 
+def get_customer_scope(cust_id):
+    """Return all customer-role IDs that represent the same real-world person."""
+    customer = execute_query(
+        """SELECT FIRST_NAME, MIDDLE_NAME, LAST_NAME, ADDR_LINE1, ADDR_LINE2, CITY, STATE, ZIP
+           FROM vw_customer_directory
+           WHERE customer_ref = %s""",
+        (cust_id,), fetchone=True
+    )
+    if not customer:
+        return [cust_id], "%s"
+
+    rows = execute_query(
+        """SELECT customer_ref
+           FROM vw_customer_directory
+           WHERE FIRST_NAME = %s
+             AND COALESCE(MIDDLE_NAME, '') = COALESCE(%s, '')
+             AND LAST_NAME = %s
+             AND ADDR_LINE1 = %s
+             AND COALESCE(ADDR_LINE2, '') = COALESCE(%s, '')
+             AND CITY = %s
+             AND STATE = %s
+             AND ZIP = %s""",
+        (
+            customer['FIRST_NAME'], customer['MIDDLE_NAME'], customer['LAST_NAME'],
+            customer['ADDR_LINE1'], customer['ADDR_LINE2'], customer['CITY'],
+            customer['STATE'], customer['ZIP']
+        ),
+        fetchall=True
+    )
+    ids = [row['customer_ref'] for row in rows] or [cust_id]
+    return ids, ", ".join(["%s"] * len(ids))
+
+
 # ============================================================
 # Auth Decorators
 # ============================================================
@@ -479,10 +512,17 @@ def get_security_question():
 @customer_required
 def customer_dashboard():
     cust_id = session['cust_id']
+    cust_ids, cust_placeholders = get_customer_scope(cust_id)
 
     dashboard = execute_query(
-        "SELECT * FROM vw_customer_dashboard WHERE customer_ref = %s",
-        (cust_id,), fetchone=True
+        f"""SELECT
+               COALESCE(SUM(active_policies), 0) AS active_policies,
+               COALESCE(SUM(total_premium), 0) AS total_premium,
+               COALESCE(SUM(outstanding_balance), 0) AS outstanding_balance,
+               COALESCE(SUM(total_paid), 0) AS total_paid
+           FROM vw_customer_dashboard
+           WHERE customer_ref IN ({cust_placeholders})""",
+        tuple(cust_ids), fetchone=True
     ) or {}
 
     # Recent invoices
@@ -490,14 +530,14 @@ def customer_dashboard():
         """(SELECT 'Home' as type, invoice_ref as id, invoice_dt as inv_date,
             due_dt as due_date, amount_due as amount, policy_ref as policy_id
            FROM vw_home_invoices
-           WHERE customer_ref = %s)
+           WHERE customer_ref IN ({0}))
            UNION ALL
            (SELECT 'Auto' as type, invoice_ref as id, invoice_dt as inv_date,
             due_dt as due_date, amount_due as amount, policy_ref as policy_id
            FROM vw_auto_invoices
-           WHERE customer_ref = %s)
-           ORDER BY inv_date DESC LIMIT 10""",
-        (cust_id, cust_id), fetchall=True
+           WHERE customer_ref IN ({0}))
+           ORDER BY inv_date DESC LIMIT 10""".format(cust_placeholders),
+        tuple(cust_ids + cust_ids), fetchall=True
     )
 
     stats = {
@@ -514,6 +554,7 @@ def customer_dashboard():
 @customer_required
 def customer_policies():
     cust_id = session['cust_id']
+    cust_ids, cust_placeholders = get_customer_scope(cust_id)
 
     home_policies = execute_query(
         """SELECT policy_ref AS HPOLICY_ID, start_dt AS HPOLICY_START_DT, end_dt AS HPOLICY_END_DT,
@@ -521,8 +562,8 @@ def customer_policies():
            HOME_TYPE, HOME_PURCHASE_VAL, HOME_AREA_SQFT, AUTO_FIRE_NOTIF, HOME_SECURITY_SYS,
            SWIMMING_POOL, BASEMENT
            FROM vw_home_policies
-           WHERE customer_ref = %s ORDER BY start_dt DESC""",
-        (cust_id,), fetchall=True
+           WHERE customer_ref IN ({0}) ORDER BY start_dt DESC""".format(cust_placeholders),
+        tuple(cust_ids), fetchall=True
     )
 
     auto_policies = execute_query(
@@ -530,9 +571,9 @@ def customer_policies():
            premium AS APREMIUM_AMT, status_code AS APOLICY_STATUS, customer_ref AS CUST_ID,
            vehicle_count
            FROM vw_auto_policies
-           WHERE customer_ref = %s
-           ORDER BY start_dt DESC""",
-        (cust_id,), fetchall=True
+           WHERE customer_ref IN ({0})
+           ORDER BY start_dt DESC""".format(cust_placeholders),
+        tuple(cust_ids), fetchall=True
     )
 
     return render_template('customer/policies.html', home_policies=home_policies, auto_policies=auto_policies)
@@ -542,15 +583,16 @@ def customer_policies():
 @customer_required
 def customer_invoices():
     cust_id = session['cust_id']
+    cust_ids, cust_placeholders = get_customer_scope(cust_id)
 
     home_invoices = execute_query(
         """SELECT invoice_ref AS HINVOICE_ID, policy_ref AS HPOLICY_ID,
            invoice_dt AS HINVOICE_DT, due_dt AS HINVOICE_DUE_DT,
            amount_due AS HINVOICE_AMT, status_code AS HPOLICY_STATUS, paid_amount
            FROM vw_home_invoices
-           WHERE customer_ref = %s
-           ORDER BY invoice_dt DESC""",
-        (cust_id,), fetchall=True
+           WHERE customer_ref IN ({0})
+           ORDER BY invoice_dt DESC""".format(cust_placeholders),
+        tuple(cust_ids), fetchall=True
     )
 
     auto_invoices = execute_query(
@@ -558,9 +600,9 @@ def customer_invoices():
            invoice_dt AS AINVOICE_DT, due_dt AS AINVOICE_DUE_DT,
            amount_due AS AINVOICE_AMT, status_code AS APOLICY_STATUS, paid_amount
            FROM vw_auto_invoices
-           WHERE customer_ref = %s
-           ORDER BY invoice_dt DESC""",
-        (cust_id,), fetchall=True
+           WHERE customer_ref IN ({0})
+           ORDER BY invoice_dt DESC""".format(cust_placeholders),
+        tuple(cust_ids), fetchall=True
     )
 
     return render_template('customer/invoices.html', home_invoices=home_invoices, auto_invoices=auto_invoices)
@@ -570,6 +612,7 @@ def customer_invoices():
 @customer_required
 def customer_payments():
     cust_id = session['cust_id']
+    cust_ids, cust_placeholders = get_customer_scope(cust_id)
 
     if request.method == 'POST':
         payment_type = request.form.get('payment_type')
@@ -578,6 +621,22 @@ def customer_payments():
         method = request.form.get('payment_method')
 
         try:
+            if payment_type not in ('home', 'auto'):
+                flash('Invalid payment type.', 'danger')
+                return redirect(url_for('customer_payments'))
+            invoice_view = 'vw_home_invoices' if payment_type == 'home' else 'vw_auto_invoices'
+            invoice = execute_query(
+                f"""SELECT invoice_ref
+                   FROM {invoice_view}
+                   WHERE invoice_ref = %s
+                     AND customer_ref IN ({cust_placeholders})
+                     AND amount_due - paid_amount > 0""",
+                tuple([int(invoice_id)] + cust_ids),
+                fetchone=True
+            )
+            if not invoice:
+                flash('Selected invoice is not available for your account.', 'danger')
+                return redirect(url_for('customer_payments'))
             execute_proc('sp_process_payment', (payment_type, int(invoice_id), float(amount), method, datetime.now().strftime('%Y-%m-%d')))
             clear_cache()
             flash('Payment processed successfully!', 'success')
@@ -591,10 +650,10 @@ def customer_payments():
            due_dt as due_date, policy_ref as policy_id,
            amount_due - paid_amount as remaining
            FROM vw_home_invoices
-           WHERE customer_ref = %s
+           WHERE customer_ref IN ({0})
            HAVING remaining > 0
-           ORDER BY due_dt""",
-        (cust_id,), fetchall=True
+           ORDER BY due_dt""".format(cust_placeholders),
+        tuple(cust_ids), fetchall=True
     )
 
     auto_invoices = execute_query(
@@ -602,19 +661,19 @@ def customer_payments():
            due_dt as due_date, policy_ref as policy_id,
            amount_due - paid_amount as remaining
            FROM vw_auto_invoices
-           WHERE customer_ref = %s
+           WHERE customer_ref IN ({0})
            HAVING remaining > 0
-           ORDER BY due_dt""",
-        (cust_id,), fetchall=True
+           ORDER BY due_dt""".format(cust_placeholders),
+        tuple(cust_ids), fetchall=True
     )
 
     # Payment history
     payments = execute_query(
         """SELECT kind as type, payment_ref as id, pay_date, amount, method, invoice_ref as invoice_id
            FROM vw_all_payments
-           WHERE customer_ref = %s
-           ORDER BY pay_date DESC""",
-        (cust_id,), fetchall=True
+           WHERE customer_ref IN ({0})
+           ORDER BY pay_date DESC""".format(cust_placeholders),
+        tuple(cust_ids), fetchall=True
     )
 
     unpaid = list(home_invoices or []) + list(auto_invoices or [])
@@ -625,13 +684,14 @@ def customer_payments():
 @customer_required
 def customer_vehicles():
     cust_id = session['cust_id']
+    cust_ids, cust_placeholders = get_customer_scope(cust_id)
     vehicles = execute_query(
         """SELECT vehicle_ref AS VEHICLE_ID, VEHICLE_VIN, VEHICLE_MAKE, VEHICLE_MODEL,
            VEHICLE_YEAR, VEHICLE_STATUS, policy_ref AS APOLICY_ID, status_code AS APOLICY_STATUS,
            drivers
            FROM vw_customer_vehicles
-           WHERE customer_ref = %s ORDER BY VEHICLE_YEAR DESC""",
-        (cust_id,), fetchall=True
+           WHERE customer_ref IN ({0}) ORDER BY VEHICLE_YEAR DESC""".format(cust_placeholders),
+        tuple(cust_ids), fetchall=True
     )
 
     vehicle_drivers = {}
@@ -648,6 +708,7 @@ def customer_vehicles():
 @customer_required
 def customer_profile():
     cust_id = session['cust_id']
+    cust_ids, cust_placeholders = get_customer_scope(cust_id)
 
     if request.method == 'POST':
         addr_line1 = sanitize(request.form.get('addr_line1', '').strip())
@@ -657,7 +718,8 @@ def customer_profile():
         zipcode = sanitize(request.form.get('zip', '').strip())
 
         try:
-            execute_proc('sp_change_address', (cust_id, addr_line1, addr_line2, city, state, zipcode))
+            for linked_cust_id in cust_ids:
+                execute_proc('sp_change_address', (linked_cust_id, addr_line1, addr_line2, city, state, zipcode))
             flash('Profile updated successfully!', 'success')
         except Exception as e:
             flash(f'Update failed: {str(e)}', 'danger')
@@ -674,7 +736,14 @@ def customer_profile():
         "SELECT USERNAME, EMAIL, CREATED_AT, LAST_LOGIN FROM RAH_USER WHERE CUST_ID = %s",
         (cust_id,), fetchone=True
     )
-    cust_types = [{'CUST_TYPE': customer['CUST_TYPE']}] if customer else []
+    cust_types = execute_query(
+        f"""SELECT customer_kind AS CUST_TYPE
+           FROM vw_customer_directory
+           WHERE customer_ref IN ({cust_placeholders})
+           ORDER BY customer_kind DESC""",
+        tuple(cust_ids),
+        fetchall=True
+    ) if customer else []
 
     return render_template('customer/profile.html', customer=customer, user=user, cust_types=cust_types)
 
@@ -1403,12 +1472,13 @@ def api_invoice_status():
 @customer_required
 def api_customer_payments():
     cust_id = session['cust_id']
+    cust_ids, cust_placeholders = get_customer_scope(cust_id)
     data = execute_query(
         """SELECT DATE_FORMAT(pay_date, '%Y-%m') as month, SUM(amount) as total
            FROM vw_all_payments
-           WHERE customer_ref = %s
-           GROUP BY month ORDER BY month""",
-        (cust_id,), fetchall=True
+           WHERE customer_ref IN ({0})
+           GROUP BY month ORDER BY month""".format(cust_placeholders),
+        tuple(cust_ids), fetchall=True
     )
     return jsonify({
         'labels': [r['month'] for r in data],
@@ -1420,13 +1490,14 @@ def api_customer_payments():
 @customer_required
 def api_customer_premium_dist():
     cust_id = session['cust_id']
+    cust_ids, cust_placeholders = get_customer_scope(cust_id)
     home_total = execute_query(
-        "SELECT COALESCE(SUM(premium), 0) as total FROM vw_home_policies WHERE customer_ref=%s AND status_code='C'",
-        (cust_id,), fetchone=True
+        "SELECT COALESCE(SUM(premium), 0) as total FROM vw_home_policies WHERE customer_ref IN ({0}) AND status_code='C'".format(cust_placeholders),
+        tuple(cust_ids), fetchone=True
     )
     auto_total = execute_query(
-        "SELECT COALESCE(SUM(premium), 0) as total FROM vw_auto_policies WHERE customer_ref=%s AND status_code='C'",
-        (cust_id,), fetchone=True
+        "SELECT COALESCE(SUM(premium), 0) as total FROM vw_auto_policies WHERE customer_ref IN ({0}) AND status_code='C'".format(cust_placeholders),
+        tuple(cust_ids), fetchone=True
     )
     return jsonify({
         'labels': ['Home Premium', 'Auto Premium'],
