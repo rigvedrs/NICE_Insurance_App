@@ -133,7 +133,8 @@ mysql -uroot -p < setup_database.sql
 This creates the `nice_insurance` database with:
 - 14 tables (10 updated core DDL tables + 4 application extension tables)
 - 15 strategic indexes with comments
-- 4 stored procedures
+- 26 stored procedures for application DML and reporting actions
+- 11 read-only security views for customer, policy, invoice, payment, vehicle, driver, and audit reads
 - 2 user-defined functions
 - 10 triggers (4 converted arc/discriminator triggers + 6 audit triggers)
 - Sample data (15+ rows per table)
@@ -200,7 +201,8 @@ The app starts at **http://localhost:8080**
 - Security question for password reset
 - CSRF token protection
 - Session timeout (30 minutes)
-- Parameterized SQL queries (prevent SQL injection)
+- Stored procedure calls for application writes, with parameterized read queries
+- Read-only views for main customer/employee reads so UI code does not depend on raw table joins
 - HTML escaping (prevent XSS)
 
 ### Updated Core DDL Model
@@ -241,7 +243,8 @@ The app starts at **http://localhost:8080**
 9. Customer Premium Distribution (Doughnut chart)
 
 ### Database Features
-- **Stored Procedures**: sp_process_payment, sp_renew_policy, sp_get_customer_summary, sp_generate_invoice
+- **Stored Procedures**: 26 procedures cover payment processing, renewals, invoice generation, login/reset logging, registration, customer CRUD, policy CRUD, vehicle CRUD, and driver assignment.
+- **Security Views**: 11 `vw_*` views expose aliased read models for customers, policies, invoices, payments, vehicles, drivers, dashboards, and audit trail data.
 - **User Functions**: fn_total_premium, fn_outstanding_balance
 - **Triggers**: 4 arc/discriminator triggers plus 6 audit triggers on home and auto policy tables (INSERT, UPDATE, DELETE)
 - **Indexes**: 15 strategic indexes with documented rationale
@@ -251,7 +254,8 @@ The app starts at **http://localhost:8080**
 - ✅ 6+ data visualization charts with Chart.js
 - ✅ 15 strategic indexes with EXPLAIN analysis page
 - ✅ Comprehensive security (lockout, login history, CSRF, bcrypt)
-- ✅ 4 stored procedures with transactions
+- ✅ 26 stored procedures with transactions for write operations
+- ✅ 11 read-only views for secured, abstracted read access
 - ✅ 2 user-defined functions
 - ✅ Audit/history tables with triggers
 - ✅ Simple caching for frequently accessed data

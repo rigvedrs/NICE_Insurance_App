@@ -28,7 +28,7 @@
                 <h6 class="small text-muted mt-2 mb-1">Assigned Drivers:</h6>
                 <ul class="list-unstyled small mb-0">
                     {% for d in vehicle_drivers[v.VEHICLE_ID] %}
-                    <li><i class="bi bi-person me-1"></i>{{ d.DRIVER_FNAME }} {{ d.DRIVER_LNAME }} (License: {{ d.DRIVER_LICENSE_NO }})</li>
+                    <li><i class="bi bi-person me-1"></i>{{ d.driver_label }}</li>
                     {% endfor %}
                 </ul>
                 {% endif %}

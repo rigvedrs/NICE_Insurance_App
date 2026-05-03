@@ -299,15 +299,7 @@ def login():
     # Verify password
     if bcrypt.checkpw(password.encode('utf-8'), user['PASSWORD_HASH'].encode('utf-8')):
         # Successful login
-        execute_query(
-            "UPDATE RAH_USER SET FAILED_LOGIN_ATTEMPTS = 0, LAST_LOGIN = NOW() WHERE USER_ID = %s",
-            (user['USER_ID'],), commit=True
-        )
-        # Log successful login
-        execute_query(
-            "INSERT INTO RAH_LOGIN_HISTORY (USER_ID, LOGIN_DT, IP_ADDRESS, SUCCESS) VALUES (%s, NOW(), %s, 1)",
-            (user['USER_ID'], request.remote_addr), commit=True
-        )
+        execute_proc('sp_record_login_success', (user['USER_ID'], request.remote_addr))
 
         session.permanent = True
         session['user_id'] = user['USER_ID']
@@ -318,7 +310,7 @@ def login():
 
         if user['CUST_ID']:
             cust = execute_query(
-                "SELECT FIRST_NAME, LAST_NAME FROM RAH_CUSTOMER WHERE CUST_ID = %s",
+                "SELECT FIRST_NAME, LAST_NAME FROM vw_customer_directory WHERE customer_ref = %s",
                 (user['CUST_ID'],), fetchone=True
             )
             if cust:
@@ -334,14 +326,7 @@ def login():
         # Failed login
         attempts = user['FAILED_LOGIN_ATTEMPTS'] + 1
         locked = 1 if attempts >= 5 else 0
-        execute_query(
-            "UPDATE RAH_USER SET FAILED_LOGIN_ATTEMPTS = %s, ACCOUNT_LOCKED = %s WHERE USER_ID = %s",
-            (attempts, locked, user['USER_ID']), commit=True
-        )
-        execute_query(
-            "INSERT INTO RAH_LOGIN_HISTORY (USER_ID, LOGIN_DT, IP_ADDRESS, SUCCESS) VALUES (%s, NOW(), %s, 0)",
-            (user['USER_ID'], request.remote_addr), commit=True
-        )
+        execute_proc('sp_record_login_failure', (user['USER_ID'], request.remote_addr))
         remaining = 5 - attempts
         if locked:
             flash('Account has been locked due to too many failed attempts.', 'danger')
@@ -417,37 +402,20 @@ def register():
             flash('Customer type must be Home or Auto.', 'danger')
             return render_template('register.html')
 
-        # Get next CUST_ID
-        max_id = execute_query("SELECT COALESCE(MAX(CUST_ID), 0) + 1 AS next_id FROM RAH_CUSTOMER", fetchone=True)
-        cust_id = max_id['next_id']
-
-        conn = get_db()
-        cursor = conn.cursor()
         try:
-            cursor.execute(
-                """INSERT INTO RAH_CUSTOMER (CUST_ID, CUST_TYPE, FIRST_NAME, MIDDLE_NAME, LAST_NAME,
-                   ADDR_LINE1, ADDR_LINE2, CITY, STATE, ZIP, GENDER, MARITAL_STATUS)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                (cust_id, cust_type, first_name, middle_name, last_name, addr_line1, addr_line2,
-                 city, state, zipcode, gender, marital_status)
+            execute_proc(
+                'sp_register_customer',
+                (
+                    username, password_hash, email, security_question, answer_hash,
+                    cust_type, first_name, middle_name, last_name, addr_line1, addr_line2,
+                    city, state, zipcode, gender, marital_status
+                )
             )
-            cursor.execute(
-                "INSERT INTO RAH_USER (USERNAME, PASSWORD_HASH, EMAIL, ROLE, CUST_ID, SECURITY_QUESTION, SECURITY_ANSWER_HASH) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                (username, password_hash, email, role, cust_id, security_question, answer_hash)
-            )
-            conn.commit()
         except mysql.connector.Error as e:
-            conn.rollback()
             flash(f'Registration failed: {str(e)}', 'danger')
             return render_template('register.html')
-        finally:
-            cursor.close()
     else:
-        execute_query(
-            "INSERT INTO RAH_USER (USERNAME, PASSWORD_HASH, EMAIL, ROLE, CUST_ID, SECURITY_QUESTION, SECURITY_ANSWER_HASH) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (username, password_hash, email, role, None, security_question, answer_hash),
-            commit=True
-        )
+        execute_proc('sp_register_employee', (username, password_hash, email, security_question, answer_hash))
 
     flash('Registration successful! Please log in.', 'success')
     return redirect(url_for('login'))
@@ -482,16 +450,8 @@ def reset_password():
 
     if bcrypt.checkpw(security_answer.lower().encode('utf-8'), user['SECURITY_ANSWER_HASH'].encode('utf-8')):
         new_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-        execute_query(
-            "UPDATE RAH_USER SET PASSWORD_HASH = %s, FAILED_LOGIN_ATTEMPTS = 0, ACCOUNT_LOCKED = 0 WHERE USER_ID = %s",
-            (new_hash, user['USER_ID']), commit=True
-        )
-        # Log reset
         token = str(uuid.uuid4())
-        execute_query(
-            "INSERT INTO RAH_PASSWORD_RESET (USER_ID, RESET_TOKEN, EXPIRES_AT, USED) VALUES (%s, %s, NOW(), 1)",
-            (user['USER_ID'], token), commit=True
-        )
+        execute_proc('sp_reset_password', (user['USER_ID'], new_hash, token))
         flash('Password reset successful! Please log in with your new password.', 'success')
         return redirect(url_for('login'))
     else:
@@ -520,60 +480,31 @@ def get_security_question():
 def customer_dashboard():
     cust_id = session['cust_id']
 
-    # Summary stats
-    home_policies = execute_query(
-        "SELECT COUNT(*) as cnt FROM RAH_HOME_POLICY WHERE CUST_ID = %s AND HPOLICY_STATUS = 'C'",
+    dashboard = execute_query(
+        "SELECT * FROM vw_customer_dashboard WHERE customer_ref = %s",
         (cust_id,), fetchone=True
-    )
-    auto_policies = execute_query(
-        "SELECT COUNT(*) as cnt FROM RAH_AUTO_POLICY WHERE CUST_ID = %s AND APOLICY_STATUS = 'C'",
-        (cust_id,), fetchone=True
-    )
-    total_premium = execute_query(
-        "SELECT fn_total_premium(%s) as total", (cust_id,), fetchone=True
-    )
-    outstanding = execute_query(
-        "SELECT fn_outstanding_balance(%s) as balance", (cust_id,), fetchone=True
-    )
-
-    # Total payments made
-    home_paid = execute_query(
-        """SELECT COALESCE(SUM(hp.HPAYMENT_AMT), 0) as total FROM RAH_HOME_PAYMENT hp
-           JOIN RAH_HOME_INVOICE hi ON hp.HINVOICE_ID = hi.HINVOICE_ID
-           JOIN RAH_HOME_POLICY hpol ON hi.HPOLICY_ID = hpol.HPOLICY_ID
-           WHERE hpol.CUST_ID = %s""",
-        (cust_id,), fetchone=True
-    )
-    auto_paid = execute_query(
-        """SELECT COALESCE(SUM(ap.APAYMENT_AMT), 0) as total FROM RAH_AUTO_PAYMENT ap
-           JOIN RAH_AUTO_INVOICE ai ON ap.AINVOICE_ID = ai.AINVOICE_ID
-           JOIN RAH_AUTO_POLICY apol ON ai.APOLICY_ID = apol.APOLICY_ID
-           WHERE apol.CUST_ID = %s""",
-        (cust_id,), fetchone=True
-    )
+    ) or {}
 
     # Recent invoices
     recent_invoices = execute_query(
-        """(SELECT 'Home' as type, HINVOICE_ID as id, HINVOICE_DT as inv_date,
-            HINVOICE_DUE_DT as due_date, HINVOICE_AMT as amount, hi.HPOLICY_ID as policy_id
-           FROM RAH_HOME_INVOICE hi
-           JOIN RAH_HOME_POLICY hp ON hi.HPOLICY_ID = hp.HPOLICY_ID
-           WHERE hp.CUST_ID = %s)
+        """(SELECT 'Home' as type, invoice_ref as id, invoice_dt as inv_date,
+            due_dt as due_date, amount_due as amount, policy_ref as policy_id
+           FROM vw_home_invoices
+           WHERE customer_ref = %s)
            UNION ALL
-           (SELECT 'Auto' as type, ai.AINVOICE_ID as id, ai.AINVOICE_DT as inv_date,
-            ai.AINVOICE_DUE_DT as due_date, ai.AINVOICE_AMT as amount, ai.APOLICY_ID as policy_id
-           FROM RAH_AUTO_INVOICE ai
-           JOIN RAH_AUTO_POLICY ap ON ai.APOLICY_ID = ap.APOLICY_ID
-           WHERE ap.CUST_ID = %s)
+           (SELECT 'Auto' as type, invoice_ref as id, invoice_dt as inv_date,
+            due_dt as due_date, amount_due as amount, policy_ref as policy_id
+           FROM vw_auto_invoices
+           WHERE customer_ref = %s)
            ORDER BY inv_date DESC LIMIT 10""",
         (cust_id, cust_id), fetchall=True
     )
 
     stats = {
-        'active_policies': (home_policies['cnt'] or 0) + (auto_policies['cnt'] or 0),
-        'total_premium': float(total_premium['total'] or 0),
-        'outstanding_balance': float(outstanding['balance'] or 0),
-        'total_paid': float(home_paid['total'] or 0) + float(auto_paid['total'] or 0),
+        'active_policies': dashboard.get('active_policies') or 0,
+        'total_premium': float(dashboard.get('total_premium') or 0),
+        'outstanding_balance': float(dashboard.get('outstanding_balance') or 0),
+        'total_paid': float(dashboard.get('total_paid') or 0),
     }
 
     return render_template('customer/dashboard.html', stats=stats, recent_invoices=recent_invoices)
@@ -585,20 +516,22 @@ def customer_policies():
     cust_id = session['cust_id']
 
     home_policies = execute_query(
-        """SELECT hp.*, h.HOME_TYPE, h.HOME_PURCHASE_VAL, h.HOME_AREA_SQFT,
-           h.AUTO_FIRE_NOTIF, h.HOME_SECURITY_SYS, h.SWIMMING_POOL, h.BASEMENT
-           FROM RAH_HOME_POLICY hp
-           LEFT JOIN RAH_HOME h ON hp.HPOLICY_ID = h.HPOLICY_ID
-           WHERE hp.CUST_ID = %s ORDER BY hp.HPOLICY_START_DT DESC""",
+        """SELECT policy_ref AS HPOLICY_ID, start_dt AS HPOLICY_START_DT, end_dt AS HPOLICY_END_DT,
+           premium AS HPREMIUM_AMT, status_code AS HPOLICY_STATUS, customer_ref AS CUST_ID,
+           HOME_TYPE, HOME_PURCHASE_VAL, HOME_AREA_SQFT, AUTO_FIRE_NOTIF, HOME_SECURITY_SYS,
+           SWIMMING_POOL, BASEMENT
+           FROM vw_home_policies
+           WHERE customer_ref = %s ORDER BY start_dt DESC""",
         (cust_id,), fetchall=True
     )
 
     auto_policies = execute_query(
-        """SELECT ap.*, COUNT(v.VEHICLE_ID) as vehicle_count
-           FROM RAH_AUTO_POLICY ap
-           LEFT JOIN RAH_VEHICLE v ON ap.APOLICY_ID = v.APOLICY_ID
-           WHERE ap.CUST_ID = %s
-           GROUP BY ap.APOLICY_ID ORDER BY ap.APOLICY_START_DT DESC""",
+        """SELECT policy_ref AS APOLICY_ID, start_dt AS APOLICY_START_DT, end_dt AS APOLICY_END_DT,
+           premium AS APREMIUM_AMT, status_code AS APOLICY_STATUS, customer_ref AS CUST_ID,
+           vehicle_count
+           FROM vw_auto_policies
+           WHERE customer_ref = %s
+           ORDER BY start_dt DESC""",
         (cust_id,), fetchall=True
     )
 
@@ -611,24 +544,22 @@ def customer_invoices():
     cust_id = session['cust_id']
 
     home_invoices = execute_query(
-        """SELECT hi.*, hp.HPOLICY_ID, hp.HPOLICY_STATUS,
-           COALESCE(SUM(hpay.HPAYMENT_AMT), 0) as paid_amount
-           FROM RAH_HOME_INVOICE hi
-           JOIN RAH_HOME_POLICY hp ON hi.HPOLICY_ID = hp.HPOLICY_ID
-           LEFT JOIN RAH_HOME_PAYMENT hpay ON hi.HINVOICE_ID = hpay.HINVOICE_ID
-           WHERE hp.CUST_ID = %s
-           GROUP BY hi.HINVOICE_ID ORDER BY hi.HINVOICE_DT DESC""",
+        """SELECT invoice_ref AS HINVOICE_ID, policy_ref AS HPOLICY_ID,
+           invoice_dt AS HINVOICE_DT, due_dt AS HINVOICE_DUE_DT,
+           amount_due AS HINVOICE_AMT, status_code AS HPOLICY_STATUS, paid_amount
+           FROM vw_home_invoices
+           WHERE customer_ref = %s
+           ORDER BY invoice_dt DESC""",
         (cust_id,), fetchall=True
     )
 
     auto_invoices = execute_query(
-        """SELECT ai.*, ap.APOLICY_ID, ap.APOLICY_STATUS,
-           COALESCE(SUM(apay.APAYMENT_AMT), 0) as paid_amount
-           FROM RAH_AUTO_INVOICE ai
-           JOIN RAH_AUTO_POLICY ap ON ai.APOLICY_ID = ap.APOLICY_ID
-           LEFT JOIN RAH_AUTO_PAYMENT apay ON ai.AINVOICE_ID = apay.AINVOICE_ID
-           WHERE ap.CUST_ID = %s
-           GROUP BY ai.AINVOICE_ID ORDER BY ai.AINVOICE_DT DESC""",
+        """SELECT invoice_ref AS AINVOICE_ID, policy_ref AS APOLICY_ID,
+           invoice_dt AS AINVOICE_DT, due_dt AS AINVOICE_DUE_DT,
+           amount_due AS AINVOICE_AMT, status_code AS APOLICY_STATUS, paid_amount
+           FROM vw_auto_invoices
+           WHERE customer_ref = %s
+           ORDER BY invoice_dt DESC""",
         (cust_id,), fetchall=True
     )
 
@@ -656,50 +587,34 @@ def customer_payments():
 
     # Get unpaid invoices
     home_invoices = execute_query(
-        """SELECT hi.HINVOICE_ID as invoice_id, 'home' as type, hi.HINVOICE_AMT as amount,
-           hi.HINVOICE_DUE_DT as due_date, hi.HPOLICY_ID as policy_id,
-           hi.HINVOICE_AMT - COALESCE(SUM(hpay.HPAYMENT_AMT), 0) as remaining
-           FROM RAH_HOME_INVOICE hi
-           JOIN RAH_HOME_POLICY hp ON hi.HPOLICY_ID = hp.HPOLICY_ID
-           LEFT JOIN RAH_HOME_PAYMENT hpay ON hi.HINVOICE_ID = hpay.HINVOICE_ID
-           WHERE hp.CUST_ID = %s
-           GROUP BY hi.HINVOICE_ID
+        """SELECT invoice_ref as invoice_id, 'home' as type, amount_due as amount,
+           due_dt as due_date, policy_ref as policy_id,
+           amount_due - paid_amount as remaining
+           FROM vw_home_invoices
+           WHERE customer_ref = %s
            HAVING remaining > 0
-           ORDER BY hi.HINVOICE_DUE_DT""",
+           ORDER BY due_dt""",
         (cust_id,), fetchall=True
     )
 
     auto_invoices = execute_query(
-        """SELECT ai.AINVOICE_ID as invoice_id, 'auto' as type, ai.AINVOICE_AMT as amount,
-           ai.AINVOICE_DUE_DT as due_date, ai.APOLICY_ID as policy_id,
-           ai.AINVOICE_AMT - COALESCE(SUM(apay.APAYMENT_AMT), 0) as remaining
-           FROM RAH_AUTO_INVOICE ai
-           JOIN RAH_AUTO_POLICY ap ON ai.APOLICY_ID = ap.APOLICY_ID
-           LEFT JOIN RAH_AUTO_PAYMENT apay ON ai.AINVOICE_ID = apay.AINVOICE_ID
-           WHERE ap.CUST_ID = %s
-           GROUP BY ai.AINVOICE_ID
+        """SELECT invoice_ref as invoice_id, 'auto' as type, amount_due as amount,
+           due_dt as due_date, policy_ref as policy_id,
+           amount_due - paid_amount as remaining
+           FROM vw_auto_invoices
+           WHERE customer_ref = %s
            HAVING remaining > 0
-           ORDER BY ai.AINVOICE_DUE_DT""",
+           ORDER BY due_dt""",
         (cust_id,), fetchall=True
     )
 
     # Payment history
     payments = execute_query(
-        """(SELECT 'Home' as type, hp.HPAYMENT_ID as id, hp.HPAYMENT_DT as pay_date,
-            hp.HPAYMENT_AMT as amount, hp.HPAYMENT_METHOD as method, hp.HINVOICE_ID as invoice_id
-           FROM RAH_HOME_PAYMENT hp
-           JOIN RAH_HOME_INVOICE hi ON hp.HINVOICE_ID = hi.HINVOICE_ID
-           JOIN RAH_HOME_POLICY hpol ON hi.HPOLICY_ID = hpol.HPOLICY_ID
-           WHERE hpol.CUST_ID = %s)
-           UNION ALL
-           (SELECT 'Auto' as type, ap.APAYMENT_ID as id, ap.APAYMENT_DT as pay_date,
-            ap.APAYMENT_AMT as amount, ap.APAYMENT_METHOD as method, ap.AINVOICE_ID as invoice_id
-           FROM RAH_AUTO_PAYMENT ap
-           JOIN RAH_AUTO_INVOICE ai ON ap.AINVOICE_ID = ai.AINVOICE_ID
-           JOIN RAH_AUTO_POLICY apol ON ai.APOLICY_ID = apol.APOLICY_ID
-           WHERE apol.CUST_ID = %s)
+        """SELECT kind as type, payment_ref as id, pay_date, amount, method, invoice_ref as invoice_id
+           FROM vw_all_payments
+           WHERE customer_ref = %s
            ORDER BY pay_date DESC""",
-        (cust_id, cust_id), fetchall=True
+        (cust_id,), fetchall=True
     )
 
     unpaid = list(home_invoices or []) + list(auto_invoices or [])
@@ -711,21 +626,20 @@ def customer_payments():
 def customer_vehicles():
     cust_id = session['cust_id']
     vehicles = execute_query(
-        """SELECT v.*, ap.APOLICY_ID, ap.APOLICY_STATUS
-           FROM RAH_VEHICLE v
-           JOIN RAH_AUTO_POLICY ap ON v.APOLICY_ID = ap.APOLICY_ID
-           WHERE ap.CUST_ID = %s ORDER BY v.VEHICLE_YEAR DESC""",
+        """SELECT vehicle_ref AS VEHICLE_ID, VEHICLE_VIN, VEHICLE_MAKE, VEHICLE_MODEL,
+           VEHICLE_YEAR, VEHICLE_STATUS, policy_ref AS APOLICY_ID, status_code AS APOLICY_STATUS,
+           drivers
+           FROM vw_customer_vehicles
+           WHERE customer_ref = %s ORDER BY VEHICLE_YEAR DESC""",
         (cust_id,), fetchall=True
     )
 
-    # Get drivers for each vehicle
     vehicle_drivers = {}
     for v in vehicles:
-        drivers = execute_query(
-            "SELECT d.* FROM RAH_DRIVER d WHERE d.VEHICLE_ID = %s",
-            (v['VEHICLE_ID'],), fetchall=True
-        )
-        vehicle_drivers[v['VEHICLE_ID']] = drivers
+        if v.get('drivers'):
+            vehicle_drivers[v['VEHICLE_ID']] = [{'driver_label': d} for d in v['drivers'].split('; ')]
+        else:
+            vehicle_drivers[v['VEHICLE_ID']] = []
 
     return render_template('customer/vehicles.html', vehicles=vehicles, vehicle_drivers=vehicle_drivers)
 
@@ -743,18 +657,18 @@ def customer_profile():
         zipcode = sanitize(request.form.get('zip', '').strip())
 
         try:
-            execute_query(
-                """UPDATE RAH_CUSTOMER SET ADDR_LINE1 = %s, ADDR_LINE2 = %s,
-                   CITY = %s, STATE = %s, ZIP = %s WHERE CUST_ID = %s""",
-                (addr_line1, addr_line2, city, state, zipcode, cust_id), commit=True
-            )
+            execute_proc('sp_change_address', (cust_id, addr_line1, addr_line2, city, state, zipcode))
             flash('Profile updated successfully!', 'success')
         except Exception as e:
             flash(f'Update failed: {str(e)}', 'danger')
         return redirect(url_for('customer_profile'))
 
     customer = execute_query(
-        "SELECT * FROM RAH_CUSTOMER WHERE CUST_ID = %s", (cust_id,), fetchone=True
+        """SELECT customer_ref AS CUST_ID, customer_kind AS CUST_TYPE,
+           FIRST_NAME, MIDDLE_NAME, LAST_NAME, ADDR_LINE1, ADDR_LINE2,
+           CITY, STATE, ZIP, GENDER, MARITAL_STATUS
+           FROM vw_customer_directory WHERE customer_ref = %s""",
+        (cust_id,), fetchone=True
     )
     user = execute_query(
         "SELECT USERNAME, EMAIL, CREATED_AT, LAST_LOGIN FROM RAH_USER WHERE CUST_ID = %s",
@@ -771,31 +685,26 @@ def customer_profile():
 @app.route('/employee/dashboard')
 @employee_required
 def employee_dashboard():
-    total_customers = execute_query("SELECT COUNT(*) as cnt FROM RAH_CUSTOMER", fetchone=True)
-    active_home = execute_query("SELECT COUNT(*) as cnt FROM RAH_HOME_POLICY WHERE HPOLICY_STATUS = 'C'", fetchone=True)
-    active_auto = execute_query("SELECT COUNT(*) as cnt FROM RAH_AUTO_POLICY WHERE APOLICY_STATUS = 'C'", fetchone=True)
+    total_customers = execute_query("SELECT COUNT(*) as cnt FROM vw_customer_directory", fetchone=True)
+    active_home = execute_query("SELECT COUNT(*) as cnt FROM vw_home_policies WHERE status_code = 'C'", fetchone=True)
+    active_auto = execute_query("SELECT COUNT(*) as cnt FROM vw_auto_policies WHERE status_code = 'C'", fetchone=True)
 
-    total_revenue_home = execute_query("SELECT COALESCE(SUM(HPAYMENT_AMT), 0) as total FROM RAH_HOME_PAYMENT", fetchone=True)
-    total_revenue_auto = execute_query("SELECT COALESCE(SUM(APAYMENT_AMT), 0) as total FROM RAH_AUTO_PAYMENT", fetchone=True)
-
-    outstanding_home = execute_query(
-        """SELECT COALESCE(SUM(hi.HINVOICE_AMT), 0) - COALESCE((SELECT SUM(HPAYMENT_AMT) FROM RAH_HOME_PAYMENT), 0) as total
-           FROM RAH_HOME_INVOICE hi""", fetchone=True
-    )
-    outstanding_auto = execute_query(
-        """SELECT COALESCE(SUM(ai.AINVOICE_AMT), 0) - COALESCE((SELECT SUM(APAYMENT_AMT) FROM RAH_AUTO_PAYMENT), 0) as total
-           FROM RAH_AUTO_INVOICE ai""", fetchone=True
-    )
+    total_revenue = execute_query("SELECT COALESCE(SUM(amount), 0) as total FROM vw_all_payments", fetchone=True)
+    outstanding_home = execute_query("SELECT COALESCE(SUM(amount_due - paid_amount), 0) as total FROM vw_home_invoices", fetchone=True)
+    outstanding_auto = execute_query("SELECT COALESCE(SUM(amount_due - paid_amount), 0) as total FROM vw_auto_invoices", fetchone=True)
 
     # Recent audit entries
     recent_audit = execute_query(
-        "SELECT * FROM RAH_POLICY_AUDIT ORDER BY CHANGED_AT DESC LIMIT 10", fetchall=True
+        """SELECT audit_ref AS AUDIT_ID, entity AS TABLE_NAME, ref AS RECORD_ID,
+           action AS ACTION, actor AS CHANGED_BY, changed_at AS CHANGED_AT
+           FROM vw_audit_trail ORDER BY changed_at DESC LIMIT 10""",
+        fetchall=True
     )
 
     stats = {
         'total_customers': total_customers['cnt'],
         'active_policies': (active_home['cnt'] or 0) + (active_auto['cnt'] or 0),
-        'total_revenue': float(total_revenue_home['total'] or 0) + float(total_revenue_auto['total'] or 0),
+        'total_revenue': float(total_revenue['total'] or 0),
         'outstanding': float(outstanding_home['total'] or 0) + float(outstanding_auto['total'] or 0),
     }
 
@@ -813,25 +722,29 @@ def employee_customers():
     if search:
         search_param = f"%{search}%"
         customers = execute_query(
-            """SELECT c.*, c.CUST_TYPE as types
-               FROM RAH_CUSTOMER c
-               WHERE c.FIRST_NAME LIKE %s OR c.LAST_NAME LIKE %s OR c.CITY LIKE %s OR c.STATE LIKE %s
-               ORDER BY c.CUST_ID LIMIT %s OFFSET %s""",
+            """SELECT customer_ref AS CUST_ID, customer_kind AS CUST_TYPE,
+               FIRST_NAME, MIDDLE_NAME, LAST_NAME, ADDR_LINE1, ADDR_LINE2,
+               CITY, STATE, ZIP, GENDER, MARITAL_STATUS, customer_kind AS types
+               FROM vw_customer_directory
+               WHERE FIRST_NAME LIKE %s OR LAST_NAME LIKE %s OR CITY LIKE %s OR STATE LIKE %s
+               ORDER BY customer_ref LIMIT %s OFFSET %s""",
             (search_param, search_param, search_param, search_param, per_page, offset), fetchall=True
         )
         total = execute_query(
-            """SELECT COUNT(DISTINCT c.CUST_ID) as cnt FROM RAH_CUSTOMER c
-               WHERE c.FIRST_NAME LIKE %s OR c.LAST_NAME LIKE %s OR c.CITY LIKE %s OR c.STATE LIKE %s""",
+            """SELECT COUNT(*) as cnt FROM vw_customer_directory
+               WHERE FIRST_NAME LIKE %s OR LAST_NAME LIKE %s OR CITY LIKE %s OR STATE LIKE %s""",
             (search_param, search_param, search_param, search_param), fetchone=True
         )
     else:
         customers = execute_query(
-            """SELECT c.*, c.CUST_TYPE as types
-               FROM RAH_CUSTOMER c
-               ORDER BY c.CUST_ID LIMIT %s OFFSET %s""",
+            """SELECT customer_ref AS CUST_ID, customer_kind AS CUST_TYPE,
+               FIRST_NAME, MIDDLE_NAME, LAST_NAME, ADDR_LINE1, ADDR_LINE2,
+               CITY, STATE, ZIP, GENDER, MARITAL_STATUS, customer_kind AS types
+               FROM vw_customer_directory
+               ORDER BY customer_ref LIMIT %s OFFSET %s""",
             (per_page, offset), fetchall=True
         )
-        total = execute_query("SELECT COUNT(*) as cnt FROM RAH_CUSTOMER", fetchone=True)
+        total = execute_query("SELECT COUNT(*) as cnt FROM vw_customer_directory", fetchone=True)
 
     total_pages = max(1, (total['cnt'] + per_page - 1) // per_page)
     return render_template('employee/customers.html', customers=customers, page=page,
@@ -854,25 +767,14 @@ def employee_add_customer():
     marital_status = request.form.get('marital_status', 'S')
 
     try:
-        max_id = execute_query("SELECT COALESCE(MAX(CUST_ID), 0) + 1 AS nid FROM RAH_CUSTOMER", fetchone=True)
-        new_id = max_id['nid']
-
-        conn = get_db()
-        cursor = conn.cursor()
-        try:
-            cursor.execute(
-                """INSERT INTO RAH_CUSTOMER (CUST_ID, CUST_TYPE, FIRST_NAME, MIDDLE_NAME, LAST_NAME,
-                   ADDR_LINE1, ADDR_LINE2, CITY, STATE, ZIP, GENDER, MARITAL_STATUS)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                (new_id, cust_type, first_name, middle_name, last_name, addr_line1, addr_line2,
-                 city, state, zipcode, gender, marital_status)
+        result = execute_proc(
+            'sp_add_customer',
+            (
+                cust_type, first_name, middle_name, last_name, addr_line1, addr_line2,
+                city, state, zipcode, gender, marital_status
             )
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            cursor.close()
+        )
+        new_id = result[0][0]['new_cust_id'] if result and result[0] else 'new'
         clear_cache()
         flash(f'Customer #{new_id} created successfully!', 'success')
     except Exception as e:
@@ -896,12 +798,12 @@ def employee_edit_customer(cust_id):
     marital_status = request.form.get('marital_status', 'S')
 
     try:
-        execute_query(
-            """UPDATE RAH_CUSTOMER SET CUST_TYPE=%s, FIRST_NAME=%s, MIDDLE_NAME=%s, LAST_NAME=%s,
-               ADDR_LINE1=%s, ADDR_LINE2=%s, CITY=%s, STATE=%s, ZIP=%s,
-               GENDER=%s, MARITAL_STATUS=%s WHERE CUST_ID=%s""",
-            (cust_type, first_name, middle_name, last_name, addr_line1, addr_line2,
-             city, state, zipcode, gender, marital_status, cust_id), commit=True
+        execute_proc(
+            'sp_update_customer',
+            (
+                cust_id, cust_type, first_name, middle_name, last_name, addr_line1,
+                addr_line2, city, state, zipcode, gender, marital_status
+            )
         )
         clear_cache()
         flash(f'Customer #{cust_id} updated successfully!', 'success')
@@ -914,7 +816,7 @@ def employee_edit_customer(cust_id):
 @employee_required
 def employee_delete_customer(cust_id):
     try:
-        execute_query("DELETE FROM RAH_CUSTOMER WHERE CUST_ID = %s", (cust_id,), commit=True)
+        execute_proc('sp_delete_customer', (cust_id,))
         clear_cache()
         flash(f'Customer #{cust_id} deleted successfully.', 'success')
     except Exception as e:
@@ -933,49 +835,51 @@ def employee_policies():
         if search:
             sp = f"%{search}%"
             policies = execute_query(
-                """SELECT hp.*, c.FIRST_NAME, c.LAST_NAME,
-                   h.HOME_TYPE, h.HOME_PURCHASE_VAL
-                   FROM RAH_HOME_POLICY hp
-                   JOIN RAH_CUSTOMER c ON hp.CUST_ID = c.CUST_ID
-                   LEFT JOIN RAH_HOME h ON hp.HPOLICY_ID = h.HPOLICY_ID
-                   WHERE c.FIRST_NAME LIKE %s OR c.LAST_NAME LIKE %s OR CAST(hp.HPOLICY_ID AS CHAR) LIKE %s
-                   ORDER BY hp.HPOLICY_START_DT DESC""",
+                """SELECT policy_ref AS HPOLICY_ID, customer_ref AS CUST_ID, FIRST_NAME, LAST_NAME,
+                   start_dt AS HPOLICY_START_DT, end_dt AS HPOLICY_END_DT,
+                   premium AS HPREMIUM_AMT, status_code AS HPOLICY_STATUS,
+                   HOME_TYPE, HOME_PURCHASE_VAL
+                   FROM vw_home_policies
+                   WHERE FIRST_NAME LIKE %s OR LAST_NAME LIKE %s OR CAST(policy_ref AS CHAR) LIKE %s
+                   ORDER BY start_dt DESC""",
                 (sp, sp, sp), fetchall=True
             )
         else:
             policies = execute_query(
-                """SELECT hp.*, c.FIRST_NAME, c.LAST_NAME,
-                   h.HOME_TYPE, h.HOME_PURCHASE_VAL
-                   FROM RAH_HOME_POLICY hp
-                   JOIN RAH_CUSTOMER c ON hp.CUST_ID = c.CUST_ID
-                   LEFT JOIN RAH_HOME h ON hp.HPOLICY_ID = h.HPOLICY_ID
-                   ORDER BY hp.HPOLICY_START_DT DESC""", fetchall=True
+                """SELECT policy_ref AS HPOLICY_ID, customer_ref AS CUST_ID, FIRST_NAME, LAST_NAME,
+                   start_dt AS HPOLICY_START_DT, end_dt AS HPOLICY_END_DT,
+                   premium AS HPREMIUM_AMT, status_code AS HPOLICY_STATUS,
+                   HOME_TYPE, HOME_PURCHASE_VAL
+                   FROM vw_home_policies
+                   ORDER BY start_dt DESC""", fetchall=True
             )
     else:
         if search:
             sp = f"%{search}%"
             policies = execute_query(
-                """SELECT ap.*, c.FIRST_NAME, c.LAST_NAME,
-                   COUNT(v.VEHICLE_ID) as vehicle_count
-                   FROM RAH_AUTO_POLICY ap
-                   JOIN RAH_CUSTOMER c ON ap.CUST_ID = c.CUST_ID
-                   LEFT JOIN RAH_VEHICLE v ON ap.APOLICY_ID = v.APOLICY_ID
-                   WHERE c.FIRST_NAME LIKE %s OR c.LAST_NAME LIKE %s OR CAST(ap.APOLICY_ID AS CHAR) LIKE %s
-                   GROUP BY ap.APOLICY_ID ORDER BY ap.APOLICY_START_DT DESC""",
+                """SELECT policy_ref AS APOLICY_ID, customer_ref AS CUST_ID, FIRST_NAME, LAST_NAME,
+                   start_dt AS APOLICY_START_DT, end_dt AS APOLICY_END_DT,
+                   premium AS APREMIUM_AMT, status_code AS APOLICY_STATUS, vehicle_count
+                   FROM vw_auto_policies
+                   WHERE FIRST_NAME LIKE %s OR LAST_NAME LIKE %s OR CAST(policy_ref AS CHAR) LIKE %s
+                   ORDER BY start_dt DESC""",
                 (sp, sp, sp), fetchall=True
             )
         else:
             policies = execute_query(
-                """SELECT ap.*, c.FIRST_NAME, c.LAST_NAME,
-                   COUNT(v.VEHICLE_ID) as vehicle_count
-                   FROM RAH_AUTO_POLICY ap
-                   JOIN RAH_CUSTOMER c ON ap.CUST_ID = c.CUST_ID
-                   LEFT JOIN RAH_VEHICLE v ON ap.APOLICY_ID = v.APOLICY_ID
-                   GROUP BY ap.APOLICY_ID ORDER BY ap.APOLICY_START_DT DESC""",
+                """SELECT policy_ref AS APOLICY_ID, customer_ref AS CUST_ID, FIRST_NAME, LAST_NAME,
+                   start_dt AS APOLICY_START_DT, end_dt AS APOLICY_END_DT,
+                   premium AS APREMIUM_AMT, status_code AS APOLICY_STATUS, vehicle_count
+                   FROM vw_auto_policies
+                   ORDER BY start_dt DESC""",
                 fetchall=True
             )
 
-    customers = execute_query("SELECT CUST_ID, CUST_TYPE, FIRST_NAME, LAST_NAME FROM RAH_CUSTOMER ORDER BY LAST_NAME", fetchall=True)
+    customers = execute_query(
+        """SELECT customer_ref AS CUST_ID, customer_kind AS CUST_TYPE, FIRST_NAME, LAST_NAME
+           FROM vw_customer_directory ORDER BY LAST_NAME""",
+        fetchall=True
+    )
     return render_template('employee/policies.html', policies=policies, policy_type=policy_type,
                          customers=customers, search=search)
 
@@ -995,35 +899,9 @@ def employee_add_policy():
             home_type = request.form.get('home_type', 'S')
             if home_type not in ('S', 'M', 'C', 'T'):
                 home_type = 'S'
-            max_id = execute_query("SELECT COALESCE(MAX(HPOLICY_ID), 0)+1 AS nid FROM RAH_HOME_POLICY", fetchone=True)
-            new_hpolicy_id = max_id['nid']
-            execute_query(
-                """INSERT INTO RAH_HOME_POLICY (HPOLICY_ID, HPOLICY_START_DT, HPOLICY_END_DT,
-                   HPREMIUM_AMT, HPOLICY_STATUS, CUST_ID, CUST_TYPE) VALUES (%s,%s,%s,%s,%s,%s,'H')""",
-                (new_hpolicy_id, start_dt, end_dt, premium, status, cust_id), commit=True
-            )
-            max_home = execute_query("SELECT COALESCE(MAX(HOME_ID), 0)+1 AS nid FROM RAH_HOME", fetchone=True)
-            execute_query(
-                """INSERT INTO RAH_HOME (HOME_ID, HOME_PURCHASE_DT, HOME_PURCHASE_VAL, HOME_AREA_SQFT,
-                   HOME_TYPE, AUTO_FIRE_NOTIF, HOME_SECURITY_SYS, SWIMMING_POOL, BASEMENT, HPOLICY_ID)
-                   VALUES (%s, %s, %s, %s, %s, 0, 0, NULL, 0, %s)""",
-                (
-                    max_home['nid'],
-                    start_dt,
-                    250000.00,
-                    1500.00,
-                    home_type,
-                    new_hpolicy_id,
-                ),
-                commit=True,
-            )
+            execute_proc('sp_add_home_policy', (cust_id, start_dt, end_dt, premium, status, home_type))
         else:
-            max_id = execute_query("SELECT COALESCE(MAX(APOLICY_ID), 0)+1 AS nid FROM RAH_AUTO_POLICY", fetchone=True)
-            execute_query(
-                """INSERT INTO RAH_AUTO_POLICY (APOLICY_ID, APOLICY_START_DT, APOLICY_END_DT,
-                   APREMIUM_AMT, APOLICY_STATUS, CUST_ID, CUST_TYPE) VALUES (%s,%s,%s,%s,%s,%s,'A')""",
-                (max_id['nid'], start_dt, end_dt, premium, status, cust_id), commit=True
-            )
+            execute_proc('sp_add_auto_policy', (cust_id, start_dt, end_dt, premium, status))
 
         clear_cache()
         flash('Policy created successfully!', 'success')
@@ -1042,45 +920,12 @@ def employee_edit_policy(policy_type, policy_id):
 
     try:
         if policy_type == 'home':
-            execute_query(
-                """UPDATE RAH_HOME_POLICY SET HPOLICY_START_DT=%s, HPOLICY_END_DT=%s,
-                   HPREMIUM_AMT=%s, HPOLICY_STATUS=%s WHERE HPOLICY_ID=%s""",
-                (start_dt, end_dt, premium, status, policy_id), commit=True
-            )
             home_type = request.form.get('home_type', 'S')
             if home_type not in ('S', 'M', 'C', 'T'):
                 home_type = 'S'
-            row = execute_query(
-                "SELECT HOME_ID FROM RAH_HOME WHERE HPOLICY_ID = %s", (policy_id,), fetchone=True
-            )
-            if row:
-                execute_query(
-                    "UPDATE RAH_HOME SET HOME_TYPE=%s WHERE HPOLICY_ID=%s",
-                    (home_type, policy_id),
-                    commit=True,
-                )
-            else:
-                max_home = execute_query("SELECT COALESCE(MAX(HOME_ID), 0)+1 AS nid FROM RAH_HOME", fetchone=True)
-                execute_query(
-                    """INSERT INTO RAH_HOME (HOME_ID, HOME_PURCHASE_DT, HOME_PURCHASE_VAL, HOME_AREA_SQFT,
-                       HOME_TYPE, AUTO_FIRE_NOTIF, HOME_SECURITY_SYS, SWIMMING_POOL, BASEMENT, HPOLICY_ID)
-                       VALUES (%s, %s, %s, %s, %s, 0, 0, NULL, 0, %s)""",
-                    (
-                        max_home['nid'],
-                        start_dt,
-                        250000.00,
-                        1500.00,
-                        home_type,
-                        policy_id,
-                    ),
-                    commit=True,
-                )
+            execute_proc('sp_update_home_policy', (policy_id, start_dt, end_dt, premium, status, home_type))
         else:
-            execute_query(
-                """UPDATE RAH_AUTO_POLICY SET APOLICY_START_DT=%s, APOLICY_END_DT=%s,
-                   APREMIUM_AMT=%s, APOLICY_STATUS=%s WHERE APOLICY_ID=%s""",
-                (start_dt, end_dt, premium, status, policy_id), commit=True
-            )
+            execute_proc('sp_update_auto_policy', (policy_id, start_dt, end_dt, premium, status))
         clear_cache()
         flash('Policy updated successfully!', 'success')
     except Exception as e:
@@ -1093,9 +938,9 @@ def employee_edit_policy(policy_type, policy_id):
 def employee_delete_policy(policy_type, policy_id):
     try:
         if policy_type == 'home':
-            execute_query("DELETE FROM RAH_HOME_POLICY WHERE HPOLICY_ID = %s", (policy_id,), commit=True)
+            execute_proc('sp_delete_home_policy', (policy_id,))
         else:
-            execute_query("DELETE FROM RAH_AUTO_POLICY WHERE APOLICY_ID = %s", (policy_id,), commit=True)
+            execute_proc('sp_delete_auto_policy', (policy_id,))
         clear_cache()
         flash('Policy deleted successfully.', 'success')
     except Exception as e:
@@ -1130,63 +975,55 @@ def employee_invoices():
     if inv_type == 'home':
         if search:
             invoices = execute_query(
-                """SELECT hi.*, hp.CUST_ID, c.FIRST_NAME, c.LAST_NAME,
-                   COALESCE(SUM(hpay.HPAYMENT_AMT), 0) as paid_amount
-                   FROM RAH_HOME_INVOICE hi
-                   JOIN RAH_HOME_POLICY hp ON hi.HPOLICY_ID = hp.HPOLICY_ID
-                   JOIN RAH_CUSTOMER c ON hp.CUST_ID = c.CUST_ID
-                   LEFT JOIN RAH_HOME_PAYMENT hpay ON hi.HINVOICE_ID = hpay.HINVOICE_ID
-                   WHERE c.FIRST_NAME LIKE %s OR c.LAST_NAME LIKE %s
-                   OR CAST(hi.HINVOICE_ID AS CHAR) LIKE %s OR CAST(hi.HPOLICY_ID AS CHAR) LIKE %s
-                   GROUP BY hi.HINVOICE_ID ORDER BY hi.HINVOICE_DT DESC""",
+                """SELECT invoice_ref AS HINVOICE_ID, policy_ref AS HPOLICY_ID,
+                   customer_ref AS CUST_ID, FIRST_NAME, LAST_NAME, invoice_dt AS HINVOICE_DT,
+                   due_dt AS HINVOICE_DUE_DT, amount_due AS HINVOICE_AMT, paid_amount
+                   FROM vw_home_invoices
+                   WHERE FIRST_NAME LIKE %s OR LAST_NAME LIKE %s
+                   OR CAST(invoice_ref AS CHAR) LIKE %s OR CAST(policy_ref AS CHAR) LIKE %s
+                   ORDER BY invoice_dt DESC""",
                 (sp, sp, sp, sp), fetchall=True
             )
         else:
             invoices = execute_query(
-                """SELECT hi.*, hp.CUST_ID, c.FIRST_NAME, c.LAST_NAME,
-                   COALESCE(SUM(hpay.HPAYMENT_AMT), 0) as paid_amount
-                   FROM RAH_HOME_INVOICE hi
-                   JOIN RAH_HOME_POLICY hp ON hi.HPOLICY_ID = hp.HPOLICY_ID
-                   JOIN RAH_CUSTOMER c ON hp.CUST_ID = c.CUST_ID
-                   LEFT JOIN RAH_HOME_PAYMENT hpay ON hi.HINVOICE_ID = hpay.HINVOICE_ID
-                   GROUP BY hi.HINVOICE_ID ORDER BY hi.HINVOICE_DT DESC""",
+                """SELECT invoice_ref AS HINVOICE_ID, policy_ref AS HPOLICY_ID,
+                   customer_ref AS CUST_ID, FIRST_NAME, LAST_NAME, invoice_dt AS HINVOICE_DT,
+                   due_dt AS HINVOICE_DUE_DT, amount_due AS HINVOICE_AMT, paid_amount
+                   FROM vw_home_invoices
+                   ORDER BY invoice_dt DESC""",
                 fetchall=True
             )
         policies = execute_query(
-            """SELECT hp.HPOLICY_ID as id, c.FIRST_NAME, c.LAST_NAME
-               FROM RAH_HOME_POLICY hp JOIN RAH_CUSTOMER c ON hp.CUST_ID = c.CUST_ID
-               WHERE hp.HPOLICY_STATUS = 'C' ORDER BY hp.HPOLICY_ID""",
+            """SELECT policy_ref as id, FIRST_NAME, LAST_NAME
+               FROM vw_home_policies
+               WHERE status_code = 'C' ORDER BY policy_ref""",
             fetchall=True
         )
     else:
         if search:
             invoices = execute_query(
-                """SELECT ai.*, ap.CUST_ID, c.FIRST_NAME, c.LAST_NAME,
-                   COALESCE(SUM(apay.APAYMENT_AMT), 0) as paid_amount
-                   FROM RAH_AUTO_INVOICE ai
-                   JOIN RAH_AUTO_POLICY ap ON ai.APOLICY_ID = ap.APOLICY_ID
-                   JOIN RAH_CUSTOMER c ON ap.CUST_ID = c.CUST_ID
-                   LEFT JOIN RAH_AUTO_PAYMENT apay ON ai.AINVOICE_ID = apay.AINVOICE_ID
-                   WHERE c.FIRST_NAME LIKE %s OR c.LAST_NAME LIKE %s
-                   OR CAST(ai.AINVOICE_ID AS CHAR) LIKE %s OR CAST(ai.APOLICY_ID AS CHAR) LIKE %s
-                   GROUP BY ai.AINVOICE_ID ORDER BY ai.AINVOICE_DT DESC""",
+                """SELECT invoice_ref AS AINVOICE_ID, policy_ref AS APOLICY_ID,
+                   customer_ref AS CUST_ID, FIRST_NAME, LAST_NAME, invoice_dt AS AINVOICE_DT,
+                   due_dt AS AINVOICE_DUE_DT, amount_due AS AINVOICE_AMT, paid_amount
+                   FROM vw_auto_invoices
+                   WHERE FIRST_NAME LIKE %s OR LAST_NAME LIKE %s
+                   OR CAST(invoice_ref AS CHAR) LIKE %s OR CAST(policy_ref AS CHAR) LIKE %s
+                   ORDER BY invoice_dt DESC""",
                 (sp, sp, sp, sp), fetchall=True
             )
         else:
             invoices = execute_query(
-                """SELECT ai.*, ap.CUST_ID, c.FIRST_NAME, c.LAST_NAME,
-                   COALESCE(SUM(apay.APAYMENT_AMT), 0) as paid_amount
-                   FROM RAH_AUTO_INVOICE ai
-                   JOIN RAH_AUTO_POLICY ap ON ai.APOLICY_ID = ap.APOLICY_ID
-                   JOIN RAH_CUSTOMER c ON ap.CUST_ID = c.CUST_ID
-                   LEFT JOIN RAH_AUTO_PAYMENT apay ON ai.AINVOICE_ID = apay.AINVOICE_ID
-                   GROUP BY ai.AINVOICE_ID ORDER BY ai.AINVOICE_DT DESC""",
+                """SELECT invoice_ref AS AINVOICE_ID, policy_ref AS APOLICY_ID,
+                   customer_ref AS CUST_ID, FIRST_NAME, LAST_NAME, invoice_dt AS AINVOICE_DT,
+                   due_dt AS AINVOICE_DUE_DT, amount_due AS AINVOICE_AMT, paid_amount
+                   FROM vw_auto_invoices
+                   ORDER BY invoice_dt DESC""",
                 fetchall=True
             )
         policies = execute_query(
-            """SELECT ap.APOLICY_ID as id, c.FIRST_NAME, c.LAST_NAME
-               FROM RAH_AUTO_POLICY ap JOIN RAH_CUSTOMER c ON ap.CUST_ID = c.CUST_ID
-               WHERE ap.APOLICY_STATUS = 'C' ORDER BY ap.APOLICY_ID""",
+            """SELECT policy_ref as id, FIRST_NAME, LAST_NAME
+               FROM vw_auto_policies
+               WHERE status_code = 'C' ORDER BY policy_ref""",
             fetchall=True
         )
 
@@ -1221,50 +1058,21 @@ def employee_payments():
     sp = f"%{search}%"
     if search:
         payments = execute_query(
-            """(SELECT 'Home' as type, hp.HPAYMENT_ID as id, hp.HPAYMENT_DT as pay_date,
-                hp.HPAYMENT_AMT as amount, hp.HPAYMENT_METHOD as method,
-                hp.HINVOICE_ID as invoice_id, c.FIRST_NAME, c.LAST_NAME
-               FROM RAH_HOME_PAYMENT hp
-               JOIN RAH_HOME_INVOICE hi ON hp.HINVOICE_ID = hi.HINVOICE_ID
-               JOIN RAH_HOME_POLICY hpol ON hi.HPOLICY_ID = hpol.HPOLICY_ID
-               JOIN RAH_CUSTOMER c ON hpol.CUST_ID = c.CUST_ID
-               WHERE c.FIRST_NAME LIKE %s OR c.LAST_NAME LIKE %s
-               OR CAST(hp.HPAYMENT_ID AS CHAR) LIKE %s OR CAST(hp.HINVOICE_ID AS CHAR) LIKE %s
-               OR hp.HPAYMENT_METHOD LIKE %s OR CAST(hp.HPAYMENT_AMT AS CHAR) LIKE %s
-               OR 'Home' LIKE %s)
-               UNION ALL
-               (SELECT 'Auto' as type, ap.APAYMENT_ID as id, ap.APAYMENT_DT as pay_date,
-                ap.APAYMENT_AMT as amount, ap.APAYMENT_METHOD as method,
-                ap.AINVOICE_ID as invoice_id, c.FIRST_NAME, c.LAST_NAME
-               FROM RAH_AUTO_PAYMENT ap
-               JOIN RAH_AUTO_INVOICE ai ON ap.AINVOICE_ID = ai.AINVOICE_ID
-               JOIN RAH_AUTO_POLICY apol ON ai.APOLICY_ID = apol.APOLICY_ID
-               JOIN RAH_CUSTOMER c ON apol.CUST_ID = c.CUST_ID
-               WHERE c.FIRST_NAME LIKE %s OR c.LAST_NAME LIKE %s
-               OR CAST(ap.APAYMENT_ID AS CHAR) LIKE %s OR CAST(ap.AINVOICE_ID AS CHAR) LIKE %s
-               OR ap.APAYMENT_METHOD LIKE %s OR CAST(ap.APAYMENT_AMT AS CHAR) LIKE %s
-               OR 'Auto' LIKE %s)
+            """SELECT kind as type, payment_ref as id, pay_date, amount, method,
+               invoice_ref as invoice_id, FIRST_NAME, LAST_NAME
+               FROM vw_all_payments
+               WHERE FIRST_NAME LIKE %s OR LAST_NAME LIKE %s
+               OR CAST(payment_ref AS CHAR) LIKE %s OR CAST(invoice_ref AS CHAR) LIKE %s
+               OR method LIKE %s OR CAST(amount AS CHAR) LIKE %s OR kind LIKE %s
                ORDER BY pay_date DESC""",
-            (sp, sp, sp, sp, sp, sp, sp, sp, sp, sp, sp, sp, sp, sp),
+            (sp, sp, sp, sp, sp, sp, sp),
             fetchall=True,
         )
     else:
         payments = execute_query(
-            """(SELECT 'Home' as type, hp.HPAYMENT_ID as id, hp.HPAYMENT_DT as pay_date,
-                hp.HPAYMENT_AMT as amount, hp.HPAYMENT_METHOD as method,
-                hp.HINVOICE_ID as invoice_id, c.FIRST_NAME, c.LAST_NAME
-               FROM RAH_HOME_PAYMENT hp
-               JOIN RAH_HOME_INVOICE hi ON hp.HINVOICE_ID = hi.HINVOICE_ID
-               JOIN RAH_HOME_POLICY hpol ON hi.HPOLICY_ID = hpol.HPOLICY_ID
-               JOIN RAH_CUSTOMER c ON hpol.CUST_ID = c.CUST_ID)
-               UNION ALL
-               (SELECT 'Auto' as type, ap.APAYMENT_ID as id, ap.APAYMENT_DT as pay_date,
-                ap.APAYMENT_AMT as amount, ap.APAYMENT_METHOD as method,
-                ap.AINVOICE_ID as invoice_id, c.FIRST_NAME, c.LAST_NAME
-               FROM RAH_AUTO_PAYMENT ap
-               JOIN RAH_AUTO_INVOICE ai ON ap.AINVOICE_ID = ai.AINVOICE_ID
-               JOIN RAH_AUTO_POLICY apol ON ai.APOLICY_ID = apol.APOLICY_ID
-               JOIN RAH_CUSTOMER c ON apol.CUST_ID = c.CUST_ID)
+            """SELECT kind as type, payment_ref as id, pay_date, amount, method,
+               invoice_ref as invoice_id, FIRST_NAME, LAST_NAME
+               FROM vw_all_payments
                ORDER BY pay_date DESC""",
             fetchall=True,
         )
@@ -1279,31 +1087,31 @@ def employee_vehicles():
     sp = f"%{search}%"
     if search:
         vehicles = execute_query(
-            """SELECT v.*, ap.CUST_ID, c.FIRST_NAME, c.LAST_NAME
-               FROM RAH_VEHICLE v
-               JOIN RAH_AUTO_POLICY ap ON v.APOLICY_ID = ap.APOLICY_ID
-               JOIN RAH_CUSTOMER c ON ap.CUST_ID = c.CUST_ID
-               WHERE c.FIRST_NAME LIKE %s OR c.LAST_NAME LIKE %s
-               OR v.VEHICLE_VIN LIKE %s OR v.VEHICLE_MAKE LIKE %s OR v.VEHICLE_MODEL LIKE %s
-               OR CAST(v.VEHICLE_YEAR AS CHAR) LIKE %s OR CAST(v.VEHICLE_ID AS CHAR) LIKE %s
-               OR CAST(v.APOLICY_ID AS CHAR) LIKE %s
-               ORDER BY v.VEHICLE_YEAR DESC""",
+            """SELECT vehicle_ref AS VEHICLE_ID, VEHICLE_VIN, VEHICLE_MAKE, VEHICLE_MODEL,
+               VEHICLE_YEAR, VEHICLE_STATUS, policy_ref AS APOLICY_ID, customer_ref AS CUST_ID,
+               FIRST_NAME, LAST_NAME, driver_count
+               FROM vw_employee_vehicles
+               WHERE FIRST_NAME LIKE %s OR LAST_NAME LIKE %s
+               OR VEHICLE_VIN LIKE %s OR VEHICLE_MAKE LIKE %s OR VEHICLE_MODEL LIKE %s
+               OR CAST(VEHICLE_YEAR AS CHAR) LIKE %s OR CAST(vehicle_ref AS CHAR) LIKE %s
+               OR CAST(policy_ref AS CHAR) LIKE %s
+               ORDER BY VEHICLE_YEAR DESC""",
             (sp, sp, sp, sp, sp, sp, sp, sp),
             fetchall=True,
         )
     else:
         vehicles = execute_query(
-            """SELECT v.*, ap.CUST_ID, c.FIRST_NAME, c.LAST_NAME
-               FROM RAH_VEHICLE v
-               JOIN RAH_AUTO_POLICY ap ON v.APOLICY_ID = ap.APOLICY_ID
-               JOIN RAH_CUSTOMER c ON ap.CUST_ID = c.CUST_ID
-               ORDER BY v.VEHICLE_YEAR DESC""",
+            """SELECT vehicle_ref AS VEHICLE_ID, VEHICLE_VIN, VEHICLE_MAKE, VEHICLE_MODEL,
+               VEHICLE_YEAR, VEHICLE_STATUS, policy_ref AS APOLICY_ID, customer_ref AS CUST_ID,
+               FIRST_NAME, LAST_NAME, driver_count
+               FROM vw_employee_vehicles
+               ORDER BY VEHICLE_YEAR DESC""",
             fetchall=True,
         )
     policies = execute_query(
-        """SELECT ap.APOLICY_ID as id, c.FIRST_NAME, c.LAST_NAME
-           FROM RAH_AUTO_POLICY ap JOIN RAH_CUSTOMER c ON ap.CUST_ID = c.CUST_ID
-           WHERE ap.APOLICY_STATUS = 'C' ORDER BY ap.APOLICY_ID""",
+        """SELECT policy_ref as id, FIRST_NAME, LAST_NAME
+           FROM vw_auto_policies
+           WHERE status_code = 'C' ORDER BY policy_ref""",
         fetchall=True
     )
     return render_template('employee/vehicles.html', vehicles=vehicles, policies=policies, search=search)
@@ -1320,12 +1128,7 @@ def employee_add_vehicle():
     apolicy_id = int(request.form.get('apolicy_id'))
 
     try:
-        max_id = execute_query("SELECT COALESCE(MAX(VEHICLE_ID),0)+1 AS nid FROM RAH_VEHICLE", fetchone=True)
-        execute_query(
-            """INSERT INTO RAH_VEHICLE (VEHICLE_ID, VEHICLE_VIN, VEHICLE_MAKE, VEHICLE_MODEL,
-               VEHICLE_YEAR, VEHICLE_STATUS, APOLICY_ID) VALUES (%s,%s,%s,%s,%s,%s,%s)""",
-            (max_id['nid'], vin, make, model, year, status, apolicy_id), commit=True
-        )
+        execute_proc('sp_add_vehicle', (vin, make, model, year, status, apolicy_id))
         clear_cache()
         flash('Vehicle added successfully!', 'success')
     except Exception as e:
@@ -1343,11 +1146,7 @@ def employee_edit_vehicle(vehicle_id):
     status = request.form.get('status')
 
     try:
-        execute_query(
-            """UPDATE RAH_VEHICLE SET VEHICLE_VIN=%s, VEHICLE_MAKE=%s, VEHICLE_MODEL=%s,
-               VEHICLE_YEAR=%s, VEHICLE_STATUS=%s WHERE VEHICLE_ID=%s""",
-            (vin, make, model, year, status, vehicle_id), commit=True
-        )
+        execute_proc('sp_update_vehicle', (vehicle_id, vin, make, model, year, status))
         clear_cache()
         flash('Vehicle updated successfully!', 'success')
     except Exception as e:
@@ -1359,7 +1158,7 @@ def employee_edit_vehicle(vehicle_id):
 @employee_required
 def employee_delete_vehicle(vehicle_id):
     try:
-        execute_query("DELETE FROM RAH_VEHICLE WHERE VEHICLE_ID = %s", (vehicle_id,), commit=True)
+        execute_proc('sp_delete_vehicle', (vehicle_id,))
         clear_cache()
         flash('Vehicle deleted successfully.', 'success')
     except Exception as e:
@@ -1375,26 +1174,30 @@ def employee_drivers():
     sp = f"%{search}%"
     if search:
         drivers = execute_query(
-            """SELECT d.*, CONCAT(v.VEHICLE_YEAR, ' ', v.VEHICLE_MAKE, ' ', v.VEHICLE_MODEL) as vehicles
-               FROM RAH_DRIVER d
-               JOIN RAH_VEHICLE v ON d.VEHICLE_ID = v.VEHICLE_ID
-               WHERE d.DRIVER_LICENSE_NO LIKE %s OR d.DRIVER_FNAME LIKE %s OR d.DRIVER_LNAME LIKE %s
-               OR CAST(d.DRIVER_ID AS CHAR) LIKE %s OR CAST(d.DRIVER_AGE AS CHAR) LIKE %s
-               OR v.VEHICLE_VIN LIKE %s OR v.VEHICLE_MAKE LIKE %s OR v.VEHICLE_MODEL LIKE %s
-               OR CAST(v.VEHICLE_YEAR AS CHAR) LIKE %s
-               ORDER BY d.DRIVER_LNAME""",
+            """SELECT driver_ref AS DRIVER_ID, DRIVER_LICENSE_NO, DRIVER_FNAME, DRIVER_LNAME,
+               DRIVER_AGE, vehicle_ref AS VEHICLE_ID, vehicle_label as vehicles, VEHICLE_VIN
+               FROM vw_employee_drivers
+               WHERE DRIVER_LICENSE_NO LIKE %s OR DRIVER_FNAME LIKE %s OR DRIVER_LNAME LIKE %s
+               OR CAST(driver_ref AS CHAR) LIKE %s OR CAST(DRIVER_AGE AS CHAR) LIKE %s
+               OR VEHICLE_VIN LIKE %s OR vehicle_label LIKE %s OR CAST(vehicle_ref AS CHAR) LIKE %s
+               OR vehicle_label LIKE %s
+               ORDER BY DRIVER_LNAME""",
             (sp, sp, sp, sp, sp, sp, sp, sp, sp),
             fetchall=True,
         )
     else:
         drivers = execute_query(
-            """SELECT d.*, CONCAT(v.VEHICLE_YEAR, ' ', v.VEHICLE_MAKE, ' ', v.VEHICLE_MODEL) as vehicles
-               FROM RAH_DRIVER d
-               JOIN RAH_VEHICLE v ON d.VEHICLE_ID = v.VEHICLE_ID
-               ORDER BY d.DRIVER_LNAME""",
+            """SELECT driver_ref AS DRIVER_ID, DRIVER_LICENSE_NO, DRIVER_FNAME, DRIVER_LNAME,
+               DRIVER_AGE, vehicle_ref AS VEHICLE_ID, vehicle_label as vehicles, VEHICLE_VIN
+               FROM vw_employee_drivers
+               ORDER BY DRIVER_LNAME""",
             fetchall=True,
         )
-    vehicles = execute_query("SELECT VEHICLE_ID, VEHICLE_MAKE, VEHICLE_MODEL, VEHICLE_YEAR FROM RAH_VEHICLE ORDER BY VEHICLE_MAKE", fetchall=True)
+    vehicles = execute_query(
+        """SELECT vehicle_ref AS VEHICLE_ID, VEHICLE_MAKE, VEHICLE_MODEL, VEHICLE_YEAR
+           FROM vw_employee_vehicles ORDER BY VEHICLE_MAKE""",
+        fetchall=True
+    )
     return render_template('employee/drivers.html', drivers=drivers, vehicles=vehicles, search=search)
 
 
@@ -1408,22 +1211,7 @@ def employee_add_driver():
     vehicle_id = int(request.form.get('vehicle_id'))
 
     try:
-        max_id = execute_query("SELECT COALESCE(MAX(DRIVER_ID),0)+1 AS nid FROM RAH_DRIVER", fetchone=True)
-        new_id = max_id['nid']
-
-        conn = get_db()
-        cursor = conn.cursor()
-        try:
-            cursor.execute(
-                "INSERT INTO RAH_DRIVER (DRIVER_ID, DRIVER_LICENSE_NO, DRIVER_FNAME, DRIVER_LNAME, DRIVER_AGE, VEHICLE_ID) VALUES (%s,%s,%s,%s,%s,%s)",
-                (new_id, license_no, fname, lname, age, vehicle_id)
-            )
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            cursor.close()
+        execute_proc('sp_add_driver', (license_no, fname, lname, age, vehicle_id))
         clear_cache()
         flash('Driver added successfully!', 'success')
     except Exception as e:
@@ -1441,10 +1229,7 @@ def employee_edit_driver(driver_id):
     vehicle_id = int(request.form.get('vehicle_id'))
 
     try:
-        execute_query(
-            "UPDATE RAH_DRIVER SET DRIVER_LICENSE_NO=%s, DRIVER_FNAME=%s, DRIVER_LNAME=%s, DRIVER_AGE=%s, VEHICLE_ID=%s WHERE DRIVER_ID=%s",
-            (license_no, fname, lname, age, vehicle_id, driver_id), commit=True
-        )
+        execute_proc('sp_update_driver', (driver_id, license_no, fname, lname, age, vehicle_id))
         clear_cache()
         flash('Driver updated successfully!', 'success')
     except Exception as e:
@@ -1456,7 +1241,7 @@ def employee_edit_driver(driver_id):
 @employee_required
 def employee_delete_driver(driver_id):
     try:
-        execute_query("DELETE FROM RAH_DRIVER WHERE DRIVER_ID = %s", (driver_id,), commit=True)
+        execute_proc('sp_delete_driver', (driver_id,))
         clear_cache()
         flash('Driver deleted successfully.', 'success')
     except Exception as e:
@@ -1470,10 +1255,7 @@ def employee_assign_driver():
     driver_id = int(request.form.get('driver_id'))
     vehicle_id = int(request.form.get('vehicle_id'))
     try:
-        execute_query(
-            "UPDATE RAH_DRIVER SET VEHICLE_ID = %s WHERE DRIVER_ID = %s",
-            (vehicle_id, driver_id), commit=True
-        )
+        execute_proc('sp_assign_driver', (driver_id, vehicle_id))
         flash('Driver assigned to vehicle!', 'success')
     except Exception as e:
         flash(f'Assignment failed: {str(e)}', 'danger')
@@ -1510,15 +1292,15 @@ def employee_index_analysis():
 @login_required
 def api_premium_by_month():
     data = execute_query(
-        """(SELECT DATE_FORMAT(HPOLICY_START_DT, '%b %Y') as month,
-               DATE_FORMAT(HPOLICY_START_DT, '%Y-%m') as month_key,
-               SUM(HPREMIUM_AMT) as total, 'Home' as type
-           FROM RAH_HOME_POLICY WHERE HPOLICY_START_DT IS NOT NULL GROUP BY month_key, month)
+        """(SELECT DATE_FORMAT(start_dt, '%b %Y') as month,
+               DATE_FORMAT(start_dt, '%Y-%m') as month_key,
+               SUM(premium) as total, 'Home' as type
+           FROM vw_home_policies WHERE start_dt IS NOT NULL GROUP BY month_key, month)
            UNION ALL
-           (SELECT DATE_FORMAT(APOLICY_START_DT, '%b %Y') as month,
-               DATE_FORMAT(APOLICY_START_DT, '%Y-%m') as month_key,
-               SUM(APREMIUM_AMT) as total, 'Auto' as type
-           FROM RAH_AUTO_POLICY WHERE APOLICY_START_DT IS NOT NULL GROUP BY month_key, month)
+           (SELECT DATE_FORMAT(start_dt, '%b %Y') as month,
+               DATE_FORMAT(start_dt, '%Y-%m') as month_key,
+               SUM(premium) as total, 'Auto' as type
+           FROM vw_auto_policies WHERE start_dt IS NOT NULL GROUP BY month_key, month)
            ORDER BY month_key""",
         fetchall=True
     )
@@ -1528,10 +1310,10 @@ def api_premium_by_month():
 @app.route('/api/chart/policy-distribution')
 @login_required
 def api_policy_distribution():
-    home_active = execute_query("SELECT COUNT(*) as cnt FROM RAH_HOME_POLICY WHERE HPOLICY_STATUS='C'", fetchone=True)
-    home_expired = execute_query("SELECT COUNT(*) as cnt FROM RAH_HOME_POLICY WHERE HPOLICY_STATUS='E'", fetchone=True)
-    auto_active = execute_query("SELECT COUNT(*) as cnt FROM RAH_AUTO_POLICY WHERE APOLICY_STATUS='C'", fetchone=True)
-    auto_expired = execute_query("SELECT COUNT(*) as cnt FROM RAH_AUTO_POLICY WHERE APOLICY_STATUS='E'", fetchone=True)
+    home_active = execute_query("SELECT COUNT(*) as cnt FROM vw_home_policies WHERE status_code='C'", fetchone=True)
+    home_expired = execute_query("SELECT COUNT(*) as cnt FROM vw_home_policies WHERE status_code='E'", fetchone=True)
+    auto_active = execute_query("SELECT COUNT(*) as cnt FROM vw_auto_policies WHERE status_code='C'", fetchone=True)
+    auto_expired = execute_query("SELECT COUNT(*) as cnt FROM vw_auto_policies WHERE status_code='E'", fetchone=True)
     return jsonify({
         'labels': ['Home Active', 'Home Expired', 'Auto Active', 'Auto Expired'],
         'data': [home_active['cnt'], home_expired['cnt'], auto_active['cnt'], auto_expired['cnt']]
@@ -1542,7 +1324,7 @@ def api_policy_distribution():
 @login_required
 def api_customer_by_state():
     data = execute_query(
-        "SELECT STATE, COUNT(*) as cnt FROM RAH_CUSTOMER GROUP BY STATE ORDER BY cnt DESC",
+        "SELECT STATE, COUNT(*) as cnt FROM vw_customer_directory GROUP BY STATE ORDER BY cnt DESC",
         fetchall=True
     )
     return jsonify({'labels': [r['STATE'] for r in data], 'data': [r['cnt'] for r in data]})
@@ -1552,11 +1334,7 @@ def api_customer_by_state():
 @login_required
 def api_payment_methods():
     data = execute_query(
-        """SELECT method, SUM(total) as cnt FROM (
-           (SELECT HPAYMENT_METHOD as method, COUNT(*) as total FROM RAH_HOME_PAYMENT GROUP BY HPAYMENT_METHOD)
-           UNION ALL
-           (SELECT APAYMENT_METHOD as method, COUNT(*) as total FROM RAH_AUTO_PAYMENT GROUP BY APAYMENT_METHOD)
-           ) combined GROUP BY method ORDER BY cnt DESC""",
+        "SELECT method, COUNT(*) as cnt FROM vw_all_payments GROUP BY method ORDER BY cnt DESC",
         fetchall=True
     )
     return jsonify({'labels': [r['method'] for r in data], 'data': [int(r['cnt']) for r in data]})
@@ -1566,8 +1344,8 @@ def api_payment_methods():
 @login_required
 def api_top_customers():
     data = execute_query(
-        """SELECT c.FIRST_NAME, c.LAST_NAME, fn_total_premium(c.CUST_ID) as total_premium
-           FROM RAH_CUSTOMER c
+        """SELECT FIRST_NAME, LAST_NAME, fn_total_premium(customer_ref) as total_premium
+           FROM vw_customer_directory
            HAVING total_premium > 0
            ORDER BY total_premium DESC LIMIT 10""",
         fetchall=True
@@ -1588,11 +1366,8 @@ def api_monthly_revenue():
                total
            FROM (
                SELECT month_key, SUM(amount) AS total FROM (
-                   SELECT DATE_FORMAT(HPAYMENT_DT, '%Y-%m') AS month_key, HPAYMENT_AMT AS amount
-                   FROM RAH_HOME_PAYMENT WHERE HPAYMENT_DT IS NOT NULL
-                   UNION ALL
-                   SELECT DATE_FORMAT(APAYMENT_DT, '%Y-%m') AS month_key, APAYMENT_AMT AS amount
-                   FROM RAH_AUTO_PAYMENT WHERE APAYMENT_DT IS NOT NULL
+                   SELECT DATE_FORMAT(pay_date, '%Y-%m') AS month_key, amount
+                   FROM vw_all_payments WHERE pay_date IS NOT NULL
                ) combined
                WHERE month_key IS NOT NULL
                GROUP BY month_key
@@ -1609,22 +1384,10 @@ def api_monthly_revenue():
 @app.route('/api/chart/invoice-status')
 @login_required
 def api_invoice_status():
-    home_total = execute_query("SELECT COUNT(*) as cnt FROM RAH_HOME_INVOICE", fetchone=True)
-    auto_total = execute_query("SELECT COUNT(*) as cnt FROM RAH_AUTO_INVOICE", fetchone=True)
-    home_paid = execute_query(
-        """SELECT COUNT(DISTINCT hi.HINVOICE_ID) as cnt
-           FROM RAH_HOME_INVOICE hi
-           JOIN RAH_HOME_PAYMENT hp ON hi.HINVOICE_ID = hp.HINVOICE_ID
-           WHERE hp.HPAYMENT_AMT >= hi.HINVOICE_AMT""",
-        fetchone=True
-    )
-    auto_paid = execute_query(
-        """SELECT COUNT(DISTINCT ai.AINVOICE_ID) as cnt
-           FROM RAH_AUTO_INVOICE ai
-           JOIN RAH_AUTO_PAYMENT ap ON ai.AINVOICE_ID = ap.AINVOICE_ID
-           WHERE ap.APAYMENT_AMT >= ai.AINVOICE_AMT""",
-        fetchone=True
-    )
+    home_total = execute_query("SELECT COUNT(*) as cnt FROM vw_home_invoices", fetchone=True)
+    auto_total = execute_query("SELECT COUNT(*) as cnt FROM vw_auto_invoices", fetchone=True)
+    home_paid = execute_query("SELECT COUNT(*) as cnt FROM vw_home_invoices WHERE paid_amount >= amount_due", fetchone=True)
+    auto_paid = execute_query("SELECT COUNT(*) as cnt FROM vw_auto_invoices WHERE paid_amount >= amount_due", fetchone=True)
     return jsonify({
         'labels': ['Home Paid', 'Home Unpaid', 'Auto Paid', 'Auto Unpaid'],
         'data': [
@@ -1641,20 +1404,11 @@ def api_invoice_status():
 def api_customer_payments():
     cust_id = session['cust_id']
     data = execute_query(
-        """SELECT month, SUM(amount) as total FROM (
-           (SELECT DATE_FORMAT(hp.HPAYMENT_DT, '%Y-%m') as month, hp.HPAYMENT_AMT as amount
-            FROM RAH_HOME_PAYMENT hp
-            JOIN RAH_HOME_INVOICE hi ON hp.HINVOICE_ID = hi.HINVOICE_ID
-            JOIN RAH_HOME_POLICY hpol ON hi.HPOLICY_ID = hpol.HPOLICY_ID
-            WHERE hpol.CUST_ID = %s)
-           UNION ALL
-           (SELECT DATE_FORMAT(ap.APAYMENT_DT, '%Y-%m') as month, ap.APAYMENT_AMT as amount
-            FROM RAH_AUTO_PAYMENT ap
-            JOIN RAH_AUTO_INVOICE ai ON ap.AINVOICE_ID = ai.AINVOICE_ID
-            JOIN RAH_AUTO_POLICY apol ON ai.APOLICY_ID = apol.APOLICY_ID
-            WHERE apol.CUST_ID = %s)
-           ) combined GROUP BY month ORDER BY month""",
-        (cust_id, cust_id), fetchall=True
+        """SELECT DATE_FORMAT(pay_date, '%Y-%m') as month, SUM(amount) as total
+           FROM vw_all_payments
+           WHERE customer_ref = %s
+           GROUP BY month ORDER BY month""",
+        (cust_id,), fetchall=True
     )
     return jsonify({
         'labels': [r['month'] for r in data],
@@ -1667,11 +1421,11 @@ def api_customer_payments():
 def api_customer_premium_dist():
     cust_id = session['cust_id']
     home_total = execute_query(
-        "SELECT COALESCE(SUM(HPREMIUM_AMT), 0) as total FROM RAH_HOME_POLICY WHERE CUST_ID=%s AND HPOLICY_STATUS='C'",
+        "SELECT COALESCE(SUM(premium), 0) as total FROM vw_home_policies WHERE customer_ref=%s AND status_code='C'",
         (cust_id,), fetchone=True
     )
     auto_total = execute_query(
-        "SELECT COALESCE(SUM(APREMIUM_AMT), 0) as total FROM RAH_AUTO_POLICY WHERE CUST_ID=%s AND APOLICY_STATUS='C'",
+        "SELECT COALESCE(SUM(premium), 0) as total FROM vw_auto_policies WHERE customer_ref=%s AND status_code='C'",
         (cust_id,), fetchone=True
     )
     return jsonify({

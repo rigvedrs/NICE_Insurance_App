@@ -423,6 +423,546 @@ BEGIN
     SELECT v_next_id AS new_invoice_id;
 END //
 
+-- SP 5: Register a customer user and matching customer row
+CREATE PROCEDURE sp_register_customer(
+    IN p_username VARCHAR(50),
+    IN p_password_hash VARCHAR(255),
+    IN p_email VARCHAR(100),
+    IN p_security_question VARCHAR(255),
+    IN p_security_answer_hash VARCHAR(255),
+    IN p_cust_type CHAR(1),
+    IN p_first_name VARCHAR(50),
+    IN p_middle_name VARCHAR(50),
+    IN p_last_name VARCHAR(50),
+    IN p_addr_line1 VARCHAR(100),
+    IN p_addr_line2 VARCHAR(100),
+    IN p_city VARCHAR(50),
+    IN p_state VARCHAR(2),
+    IN p_zip VARCHAR(5),
+    IN p_gender CHAR(1),
+    IN p_marital_status CHAR(1)
+)
+BEGIN
+    DECLARE v_new_cust_id INT;
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Customer registration failed';
+    END;
+
+    START TRANSACTION;
+    SELECT COALESCE(MAX(CUST_ID), 0) + 1 INTO v_new_cust_id FROM RAH_CUSTOMER;
+    INSERT INTO RAH_CUSTOMER (
+        CUST_ID, CUST_TYPE, FIRST_NAME, MIDDLE_NAME, LAST_NAME,
+        ADDR_LINE1, ADDR_LINE2, CITY, STATE, ZIP, GENDER, MARITAL_STATUS
+    )
+    VALUES (
+        v_new_cust_id, p_cust_type, p_first_name, p_middle_name, p_last_name,
+        p_addr_line1, p_addr_line2, p_city, p_state, p_zip, p_gender, p_marital_status
+    );
+    INSERT INTO RAH_USER (
+        USERNAME, PASSWORD_HASH, EMAIL, ROLE, CUST_ID, SECURITY_QUESTION, SECURITY_ANSWER_HASH
+    )
+    VALUES (
+        p_username, p_password_hash, p_email, 'customer', v_new_cust_id,
+        p_security_question, p_security_answer_hash
+    );
+    COMMIT;
+    SELECT v_new_cust_id AS new_cust_id;
+END //
+
+CREATE PROCEDURE sp_register_employee(
+    IN p_username VARCHAR(50),
+    IN p_password_hash VARCHAR(255),
+    IN p_email VARCHAR(100),
+    IN p_security_question VARCHAR(255),
+    IN p_security_answer_hash VARCHAR(255)
+)
+BEGIN
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Employee registration failed';
+    END;
+
+    START TRANSACTION;
+    INSERT INTO RAH_USER (
+        USERNAME, PASSWORD_HASH, EMAIL, ROLE, CUST_ID, SECURITY_QUESTION, SECURITY_ANSWER_HASH
+    )
+    VALUES (
+        p_username, p_password_hash, p_email, 'employee', NULL,
+        p_security_question, p_security_answer_hash
+    );
+    COMMIT;
+END //
+
+CREATE PROCEDURE sp_record_login_success(IN p_user_id INT, IN p_ip_address VARCHAR(45))
+BEGIN
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Login success recording failed';
+    END;
+
+    START TRANSACTION;
+    UPDATE RAH_USER
+       SET FAILED_LOGIN_ATTEMPTS = 0,
+           LAST_LOGIN = NOW()
+     WHERE USER_ID = p_user_id;
+    INSERT INTO RAH_LOGIN_HISTORY (USER_ID, LOGIN_DT, IP_ADDRESS, SUCCESS)
+    VALUES (p_user_id, NOW(), p_ip_address, 1);
+    COMMIT;
+END //
+
+CREATE PROCEDURE sp_record_login_failure(IN p_user_id INT, IN p_ip_address VARCHAR(45))
+BEGIN
+    DECLARE v_attempts INT;
+    DECLARE v_locked TINYINT;
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Login failure recording failed';
+    END;
+
+    START TRANSACTION;
+    SELECT FAILED_LOGIN_ATTEMPTS + 1 INTO v_attempts
+    FROM RAH_USER
+    WHERE USER_ID = p_user_id
+    FOR UPDATE;
+    SET v_locked = IF(v_attempts >= 5, 1, 0);
+    UPDATE RAH_USER
+       SET FAILED_LOGIN_ATTEMPTS = v_attempts,
+           ACCOUNT_LOCKED = v_locked
+     WHERE USER_ID = p_user_id;
+    INSERT INTO RAH_LOGIN_HISTORY (USER_ID, LOGIN_DT, IP_ADDRESS, SUCCESS)
+    VALUES (p_user_id, NOW(), p_ip_address, 0);
+    COMMIT;
+    SELECT v_attempts AS failed_attempts, v_locked AS account_locked;
+END //
+
+CREATE PROCEDURE sp_reset_password(IN p_user_id INT, IN p_new_hash VARCHAR(255), IN p_token VARCHAR(255))
+BEGIN
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Password reset failed';
+    END;
+
+    START TRANSACTION;
+    UPDATE RAH_USER
+       SET PASSWORD_HASH = p_new_hash,
+           FAILED_LOGIN_ATTEMPTS = 0,
+           ACCOUNT_LOCKED = 0
+     WHERE USER_ID = p_user_id;
+    INSERT INTO RAH_PASSWORD_RESET (USER_ID, RESET_TOKEN, EXPIRES_AT, USED)
+    VALUES (p_user_id, p_token, NOW(), 1);
+    COMMIT;
+END //
+
+CREATE PROCEDURE sp_change_address(
+    IN p_cust_id INT,
+    IN p_addr_line1 VARCHAR(100),
+    IN p_addr_line2 VARCHAR(100),
+    IN p_city VARCHAR(50),
+    IN p_state VARCHAR(2),
+    IN p_zip VARCHAR(5)
+)
+BEGIN
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Change address failed';
+    END;
+
+    START TRANSACTION;
+    UPDATE RAH_CUSTOMER
+       SET ADDR_LINE1 = p_addr_line1,
+           ADDR_LINE2 = p_addr_line2,
+           CITY = p_city,
+           STATE = p_state,
+           ZIP = p_zip
+     WHERE CUST_ID = p_cust_id;
+    COMMIT;
+END //
+
+CREATE PROCEDURE sp_add_customer(
+    IN p_cust_type CHAR(1),
+    IN p_first_name VARCHAR(50),
+    IN p_middle_name VARCHAR(50),
+    IN p_last_name VARCHAR(50),
+    IN p_addr_line1 VARCHAR(100),
+    IN p_addr_line2 VARCHAR(100),
+    IN p_city VARCHAR(50),
+    IN p_state VARCHAR(2),
+    IN p_zip VARCHAR(5),
+    IN p_gender CHAR(1),
+    IN p_marital_status CHAR(1)
+)
+BEGIN
+    DECLARE v_new_cust_id INT;
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Customer creation failed';
+    END;
+
+    START TRANSACTION;
+    SELECT COALESCE(MAX(CUST_ID), 0) + 1 INTO v_new_cust_id FROM RAH_CUSTOMER;
+    INSERT INTO RAH_CUSTOMER (
+        CUST_ID, CUST_TYPE, FIRST_NAME, MIDDLE_NAME, LAST_NAME,
+        ADDR_LINE1, ADDR_LINE2, CITY, STATE, ZIP, GENDER, MARITAL_STATUS
+    )
+    VALUES (
+        v_new_cust_id, p_cust_type, p_first_name, p_middle_name, p_last_name,
+        p_addr_line1, p_addr_line2, p_city, p_state, p_zip, p_gender, p_marital_status
+    );
+    COMMIT;
+    SELECT v_new_cust_id AS new_cust_id;
+END //
+
+CREATE PROCEDURE sp_update_customer(
+    IN p_cust_id INT,
+    IN p_cust_type CHAR(1),
+    IN p_first_name VARCHAR(50),
+    IN p_middle_name VARCHAR(50),
+    IN p_last_name VARCHAR(50),
+    IN p_addr_line1 VARCHAR(100),
+    IN p_addr_line2 VARCHAR(100),
+    IN p_city VARCHAR(50),
+    IN p_state VARCHAR(2),
+    IN p_zip VARCHAR(5),
+    IN p_gender CHAR(1),
+    IN p_marital_status CHAR(1)
+)
+BEGIN
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Customer update failed';
+    END;
+
+    START TRANSACTION;
+    UPDATE RAH_CUSTOMER
+       SET CUST_TYPE = p_cust_type,
+           FIRST_NAME = p_first_name,
+           MIDDLE_NAME = p_middle_name,
+           LAST_NAME = p_last_name,
+           ADDR_LINE1 = p_addr_line1,
+           ADDR_LINE2 = p_addr_line2,
+           CITY = p_city,
+           STATE = p_state,
+           ZIP = p_zip,
+           GENDER = p_gender,
+           MARITAL_STATUS = p_marital_status
+     WHERE CUST_ID = p_cust_id;
+    COMMIT;
+END //
+
+CREATE PROCEDURE sp_delete_customer(IN p_cust_id INT)
+BEGIN
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Customer deletion failed';
+    END;
+
+    START TRANSACTION;
+    DELETE FROM RAH_CUSTOMER WHERE CUST_ID = p_cust_id;
+    COMMIT;
+END //
+
+CREATE PROCEDURE sp_add_home_policy(
+    IN p_cust_id INT,
+    IN p_start_dt DATE,
+    IN p_end_dt DATE,
+    IN p_premium DECIMAL(12,2),
+    IN p_status CHAR(1),
+    IN p_home_type CHAR(1)
+)
+BEGIN
+    DECLARE v_policy_id INT;
+    DECLARE v_home_id INT;
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Home policy creation failed';
+    END;
+
+    START TRANSACTION;
+    SELECT COALESCE(MAX(HPOLICY_ID), 0) + 1 INTO v_policy_id FROM RAH_HOME_POLICY;
+    INSERT INTO RAH_HOME_POLICY (
+        HPOLICY_ID, HPOLICY_START_DT, HPOLICY_END_DT, HPREMIUM_AMT, HPOLICY_STATUS, CUST_ID, CUST_TYPE
+    )
+    VALUES (v_policy_id, p_start_dt, p_end_dt, p_premium, p_status, p_cust_id, 'H');
+
+    SELECT COALESCE(MAX(HOME_ID), 0) + 1 INTO v_home_id FROM RAH_HOME;
+    INSERT INTO RAH_HOME (
+        HOME_ID, HOME_PURCHASE_DT, HOME_PURCHASE_VAL, HOME_AREA_SQFT,
+        HOME_TYPE, AUTO_FIRE_NOTIF, HOME_SECURITY_SYS, SWIMMING_POOL, BASEMENT, HPOLICY_ID
+    )
+    VALUES (v_home_id, p_start_dt, 250000.00, 1500.00, p_home_type, 0, 0, NULL, 0, v_policy_id);
+    COMMIT;
+    SELECT v_policy_id AS new_policy_id;
+END //
+
+CREATE PROCEDURE sp_add_auto_policy(
+    IN p_cust_id INT,
+    IN p_start_dt DATE,
+    IN p_end_dt DATE,
+    IN p_premium DECIMAL(12,2),
+    IN p_status CHAR(1)
+)
+BEGIN
+    DECLARE v_policy_id INT;
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Auto policy creation failed';
+    END;
+
+    START TRANSACTION;
+    SELECT COALESCE(MAX(APOLICY_ID), 0) + 1 INTO v_policy_id FROM RAH_AUTO_POLICY;
+    INSERT INTO RAH_AUTO_POLICY (
+        APOLICY_ID, APOLICY_START_DT, APOLICY_END_DT, APREMIUM_AMT, APOLICY_STATUS, CUST_ID, CUST_TYPE
+    )
+    VALUES (v_policy_id, p_start_dt, p_end_dt, p_premium, p_status, p_cust_id, 'A');
+    COMMIT;
+    SELECT v_policy_id AS new_policy_id;
+END //
+
+CREATE PROCEDURE sp_update_home_policy(
+    IN p_policy_id INT,
+    IN p_start_dt DATE,
+    IN p_end_dt DATE,
+    IN p_premium DECIMAL(12,2),
+    IN p_status CHAR(1),
+    IN p_home_type CHAR(1)
+)
+BEGIN
+    DECLARE v_home_id INT;
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Home policy update failed';
+    END;
+
+    START TRANSACTION;
+    UPDATE RAH_HOME_POLICY
+       SET HPOLICY_START_DT = p_start_dt,
+           HPOLICY_END_DT = p_end_dt,
+           HPREMIUM_AMT = p_premium,
+           HPOLICY_STATUS = p_status
+     WHERE HPOLICY_ID = p_policy_id;
+
+    SELECT MIN(HOME_ID) INTO v_home_id
+    FROM RAH_HOME
+    WHERE HPOLICY_ID = p_policy_id;
+
+    IF v_home_id IS NULL THEN
+        SELECT COALESCE(MAX(HOME_ID), 0) + 1 INTO v_home_id FROM RAH_HOME;
+        INSERT INTO RAH_HOME (
+            HOME_ID, HOME_PURCHASE_DT, HOME_PURCHASE_VAL, HOME_AREA_SQFT,
+            HOME_TYPE, AUTO_FIRE_NOTIF, HOME_SECURITY_SYS, SWIMMING_POOL, BASEMENT, HPOLICY_ID
+        )
+        VALUES (v_home_id, p_start_dt, 250000.00, 1500.00, p_home_type, 0, 0, NULL, 0, p_policy_id);
+    ELSE
+        UPDATE RAH_HOME SET HOME_TYPE = p_home_type WHERE HOME_ID = v_home_id;
+    END IF;
+    COMMIT;
+END //
+
+CREATE PROCEDURE sp_update_auto_policy(
+    IN p_policy_id INT,
+    IN p_start_dt DATE,
+    IN p_end_dt DATE,
+    IN p_premium DECIMAL(12,2),
+    IN p_status CHAR(1)
+)
+BEGIN
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Auto policy update failed';
+    END;
+
+    START TRANSACTION;
+    UPDATE RAH_AUTO_POLICY
+       SET APOLICY_START_DT = p_start_dt,
+           APOLICY_END_DT = p_end_dt,
+           APREMIUM_AMT = p_premium,
+           APOLICY_STATUS = p_status
+     WHERE APOLICY_ID = p_policy_id;
+    COMMIT;
+END //
+
+CREATE PROCEDURE sp_delete_home_policy(IN p_policy_id INT)
+BEGIN
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Home policy deletion failed';
+    END;
+
+    START TRANSACTION;
+    DELETE FROM RAH_HOME_POLICY WHERE HPOLICY_ID = p_policy_id;
+    COMMIT;
+END //
+
+CREATE PROCEDURE sp_delete_auto_policy(IN p_policy_id INT)
+BEGIN
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Auto policy deletion failed';
+    END;
+
+    START TRANSACTION;
+    DELETE FROM RAH_AUTO_POLICY WHERE APOLICY_ID = p_policy_id;
+    COMMIT;
+END //
+
+CREATE PROCEDURE sp_add_vehicle(
+    IN p_vin VARCHAR(17),
+    IN p_make VARCHAR(50),
+    IN p_model VARCHAR(50),
+    IN p_year SMALLINT,
+    IN p_status CHAR(1),
+    IN p_apolicy_id INT
+)
+BEGIN
+    DECLARE v_vehicle_id INT;
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Vehicle creation failed';
+    END;
+
+    START TRANSACTION;
+    SELECT COALESCE(MAX(VEHICLE_ID), 0) + 1 INTO v_vehicle_id FROM RAH_VEHICLE;
+    INSERT INTO RAH_VEHICLE (
+        VEHICLE_ID, VEHICLE_VIN, VEHICLE_MAKE, VEHICLE_MODEL, VEHICLE_YEAR, VEHICLE_STATUS, APOLICY_ID
+    )
+    VALUES (v_vehicle_id, p_vin, p_make, p_model, p_year, p_status, p_apolicy_id);
+    COMMIT;
+    SELECT v_vehicle_id AS new_vehicle_id;
+END //
+
+CREATE PROCEDURE sp_update_vehicle(
+    IN p_vehicle_id INT,
+    IN p_vin VARCHAR(17),
+    IN p_make VARCHAR(50),
+    IN p_model VARCHAR(50),
+    IN p_year SMALLINT,
+    IN p_status CHAR(1)
+)
+BEGIN
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Vehicle update failed';
+    END;
+
+    START TRANSACTION;
+    UPDATE RAH_VEHICLE
+       SET VEHICLE_VIN = p_vin,
+           VEHICLE_MAKE = p_make,
+           VEHICLE_MODEL = p_model,
+           VEHICLE_YEAR = p_year,
+           VEHICLE_STATUS = p_status
+     WHERE VEHICLE_ID = p_vehicle_id;
+    COMMIT;
+END //
+
+CREATE PROCEDURE sp_delete_vehicle(IN p_vehicle_id INT)
+BEGIN
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Vehicle deletion failed';
+    END;
+
+    START TRANSACTION;
+    DELETE FROM RAH_VEHICLE WHERE VEHICLE_ID = p_vehicle_id;
+    COMMIT;
+END //
+
+CREATE PROCEDURE sp_add_driver(
+    IN p_license_no VARCHAR(20),
+    IN p_fname VARCHAR(50),
+    IN p_lname VARCHAR(50),
+    IN p_age INT,
+    IN p_vehicle_id INT
+)
+BEGIN
+    DECLARE v_driver_id INT;
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Driver creation failed';
+    END;
+
+    START TRANSACTION;
+    SELECT COALESCE(MAX(DRIVER_ID), 0) + 1 INTO v_driver_id FROM RAH_DRIVER;
+    INSERT INTO RAH_DRIVER (
+        DRIVER_ID, DRIVER_LICENSE_NO, DRIVER_FNAME, DRIVER_LNAME, DRIVER_AGE, VEHICLE_ID
+    )
+    VALUES (v_driver_id, p_license_no, p_fname, p_lname, p_age, p_vehicle_id);
+    COMMIT;
+    SELECT v_driver_id AS new_driver_id;
+END //
+
+CREATE PROCEDURE sp_update_driver(
+    IN p_driver_id INT,
+    IN p_license_no VARCHAR(20),
+    IN p_fname VARCHAR(50),
+    IN p_lname VARCHAR(50),
+    IN p_age INT,
+    IN p_vehicle_id INT
+)
+BEGIN
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Driver update failed';
+    END;
+
+    START TRANSACTION;
+    UPDATE RAH_DRIVER
+       SET DRIVER_LICENSE_NO = p_license_no,
+           DRIVER_FNAME = p_fname,
+           DRIVER_LNAME = p_lname,
+           DRIVER_AGE = p_age,
+           VEHICLE_ID = p_vehicle_id
+     WHERE DRIVER_ID = p_driver_id;
+    COMMIT;
+END //
+
+CREATE PROCEDURE sp_delete_driver(IN p_driver_id INT)
+BEGIN
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Driver deletion failed';
+    END;
+
+    START TRANSACTION;
+    DELETE FROM RAH_DRIVER WHERE DRIVER_ID = p_driver_id;
+    COMMIT;
+END //
+
+CREATE PROCEDURE sp_assign_driver(IN p_driver_id INT, IN p_vehicle_id INT)
+BEGIN
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Driver assignment failed';
+    END;
+
+    START TRANSACTION;
+    UPDATE RAH_DRIVER SET VEHICLE_ID = p_vehicle_id WHERE DRIVER_ID = p_driver_id;
+    COMMIT;
+END //
+
 
 -- ============================================================
 -- 4. USER-DEFINED FUNCTIONS
@@ -884,6 +1424,234 @@ INSERT INTO RAH_LOGIN_HISTORY (USER_ID, LOGIN_DT, IP_ADDRESS, SUCCESS) VALUES
 (1, '2026-04-02 07:31:00', '192.168.1.100', 1),
 (2, '2026-04-01 09:00:00', '10.0.0.50', 1),
 (3, '2026-04-01 11:30:00', '172.16.0.25', 1);
+
+-- ============================================================
+-- 7. READ-ONLY SECURITY VIEWS
+-- ============================================================
+
+CREATE VIEW vw_customer_directory AS
+SELECT
+    c.CUST_ID AS customer_ref,
+    c.CUST_TYPE AS customer_kind,
+    c.FIRST_NAME,
+    c.MIDDLE_NAME,
+    c.LAST_NAME,
+    c.ADDR_LINE1,
+    c.ADDR_LINE2,
+    c.CITY,
+    c.STATE,
+    c.ZIP,
+    c.GENDER,
+    c.MARITAL_STATUS,
+    COUNT(*) AS row_marker
+FROM RAH_CUSTOMER c
+GROUP BY c.CUST_ID, c.CUST_TYPE, c.FIRST_NAME, c.MIDDLE_NAME, c.LAST_NAME,
+         c.ADDR_LINE1, c.ADDR_LINE2, c.CITY, c.STATE, c.ZIP, c.GENDER, c.MARITAL_STATUS;
+
+CREATE VIEW vw_home_policies AS
+SELECT
+    hp.HPOLICY_ID AS policy_ref,
+    hp.CUST_ID AS customer_ref,
+    c.FIRST_NAME,
+    c.LAST_NAME,
+    hp.HPOLICY_START_DT AS start_dt,
+    hp.HPOLICY_END_DT AS end_dt,
+    hp.HPREMIUM_AMT AS premium,
+    hp.HPOLICY_STATUS AS status_code,
+    h.HOME_TYPE,
+    h.HOME_PURCHASE_VAL,
+    h.HOME_AREA_SQFT,
+    h.AUTO_FIRE_NOTIF,
+    h.HOME_SECURITY_SYS,
+    h.SWIMMING_POOL,
+    h.BASEMENT,
+    COUNT(h.HOME_ID) AS home_count
+FROM RAH_HOME_POLICY hp
+JOIN RAH_CUSTOMER c ON hp.CUST_ID = c.CUST_ID AND hp.CUST_TYPE = c.CUST_TYPE
+LEFT JOIN RAH_HOME h ON hp.HPOLICY_ID = h.HPOLICY_ID
+GROUP BY hp.HPOLICY_ID, hp.CUST_ID, c.FIRST_NAME, c.LAST_NAME,
+         hp.HPOLICY_START_DT, hp.HPOLICY_END_DT, hp.HPREMIUM_AMT, hp.HPOLICY_STATUS,
+         h.HOME_ID, h.HOME_TYPE, h.HOME_PURCHASE_VAL, h.HOME_AREA_SQFT,
+         h.AUTO_FIRE_NOTIF, h.HOME_SECURITY_SYS, h.SWIMMING_POOL, h.BASEMENT;
+
+CREATE VIEW vw_auto_policies AS
+SELECT
+    ap.APOLICY_ID AS policy_ref,
+    ap.CUST_ID AS customer_ref,
+    c.FIRST_NAME,
+    c.LAST_NAME,
+    ap.APOLICY_START_DT AS start_dt,
+    ap.APOLICY_END_DT AS end_dt,
+    ap.APREMIUM_AMT AS premium,
+    ap.APOLICY_STATUS AS status_code,
+    COUNT(v.VEHICLE_ID) AS vehicle_count
+FROM RAH_AUTO_POLICY ap
+JOIN RAH_CUSTOMER c ON ap.CUST_ID = c.CUST_ID AND ap.CUST_TYPE = c.CUST_TYPE
+LEFT JOIN RAH_VEHICLE v ON ap.APOLICY_ID = v.APOLICY_ID
+GROUP BY ap.APOLICY_ID, ap.CUST_ID, c.FIRST_NAME, c.LAST_NAME,
+         ap.APOLICY_START_DT, ap.APOLICY_END_DT, ap.APREMIUM_AMT, ap.APOLICY_STATUS;
+
+CREATE VIEW vw_home_invoices AS
+SELECT
+    hi.HINVOICE_ID AS invoice_ref,
+    hi.HPOLICY_ID AS policy_ref,
+    hp.CUST_ID AS customer_ref,
+    c.FIRST_NAME,
+    c.LAST_NAME,
+    hi.HINVOICE_DT AS invoice_dt,
+    hi.HINVOICE_DUE_DT AS due_dt,
+    hi.HINVOICE_AMT AS amount_due,
+    hp.HPOLICY_STATUS AS status_code,
+    COALESCE(SUM(hpay.HPAYMENT_AMT), 0) AS paid_amount
+FROM RAH_HOME_INVOICE hi
+JOIN RAH_HOME_POLICY hp ON hi.HPOLICY_ID = hp.HPOLICY_ID
+JOIN RAH_CUSTOMER c ON hp.CUST_ID = c.CUST_ID AND hp.CUST_TYPE = c.CUST_TYPE
+LEFT JOIN RAH_HOME_PAYMENT hpay ON hi.HINVOICE_ID = hpay.HINVOICE_ID
+GROUP BY hi.HINVOICE_ID, hi.HPOLICY_ID, hp.CUST_ID, c.FIRST_NAME, c.LAST_NAME,
+         hi.HINVOICE_DT, hi.HINVOICE_DUE_DT, hi.HINVOICE_AMT, hp.HPOLICY_STATUS;
+
+CREATE VIEW vw_auto_invoices AS
+SELECT
+    ai.AINVOICE_ID AS invoice_ref,
+    ai.APOLICY_ID AS policy_ref,
+    ap.CUST_ID AS customer_ref,
+    c.FIRST_NAME,
+    c.LAST_NAME,
+    ai.AINVOICE_DT AS invoice_dt,
+    ai.AINVOICE_DUE_DT AS due_dt,
+    ai.AINVOICE_AMT AS amount_due,
+    ap.APOLICY_STATUS AS status_code,
+    COALESCE(SUM(apay.APAYMENT_AMT), 0) AS paid_amount
+FROM RAH_AUTO_INVOICE ai
+JOIN RAH_AUTO_POLICY ap ON ai.APOLICY_ID = ap.APOLICY_ID
+JOIN RAH_CUSTOMER c ON ap.CUST_ID = c.CUST_ID AND ap.CUST_TYPE = c.CUST_TYPE
+LEFT JOIN RAH_AUTO_PAYMENT apay ON ai.AINVOICE_ID = apay.AINVOICE_ID
+GROUP BY ai.AINVOICE_ID, ai.APOLICY_ID, ap.CUST_ID, c.FIRST_NAME, c.LAST_NAME,
+         ai.AINVOICE_DT, ai.AINVOICE_DUE_DT, ai.AINVOICE_AMT, ap.APOLICY_STATUS;
+
+CREATE VIEW vw_all_payments AS
+SELECT
+    'Home' AS kind,
+    hp.HPAYMENT_ID AS payment_ref,
+    hp.HPAYMENT_DT AS pay_date,
+    hp.HPAYMENT_AMT AS amount,
+    hp.HPAYMENT_METHOD AS method,
+    hp.HINVOICE_ID AS invoice_ref,
+    hpol.CUST_ID AS customer_ref,
+    c.FIRST_NAME,
+    c.LAST_NAME
+FROM RAH_HOME_PAYMENT hp
+JOIN RAH_HOME_INVOICE hi ON hp.HINVOICE_ID = hi.HINVOICE_ID
+JOIN RAH_HOME_POLICY hpol ON hi.HPOLICY_ID = hpol.HPOLICY_ID
+JOIN RAH_CUSTOMER c ON hpol.CUST_ID = c.CUST_ID AND hpol.CUST_TYPE = c.CUST_TYPE
+UNION ALL
+SELECT
+    'Auto',
+    ap.APAYMENT_ID,
+    ap.APAYMENT_DT,
+    ap.APAYMENT_AMT,
+    ap.APAYMENT_METHOD,
+    ap.AINVOICE_ID,
+    apol.CUST_ID,
+    c.FIRST_NAME,
+    c.LAST_NAME
+FROM RAH_AUTO_PAYMENT ap
+JOIN RAH_AUTO_INVOICE ai ON ap.AINVOICE_ID = ai.AINVOICE_ID
+JOIN RAH_AUTO_POLICY apol ON ai.APOLICY_ID = apol.APOLICY_ID
+JOIN RAH_CUSTOMER c ON apol.CUST_ID = c.CUST_ID AND apol.CUST_TYPE = c.CUST_TYPE;
+
+CREATE VIEW vw_customer_dashboard AS
+SELECT
+    c.CUST_ID AS customer_ref,
+    (
+        SELECT COUNT(*) FROM RAH_HOME_POLICY hp
+        WHERE hp.CUST_ID = c.CUST_ID AND hp.HPOLICY_STATUS = 'C'
+    ) + (
+        SELECT COUNT(*) FROM RAH_AUTO_POLICY ap
+        WHERE ap.CUST_ID = c.CUST_ID AND ap.APOLICY_STATUS = 'C'
+    ) AS active_policies,
+    fn_total_premium(c.CUST_ID) AS total_premium,
+    fn_outstanding_balance(c.CUST_ID) AS outstanding_balance,
+    (
+        SELECT COALESCE(SUM(hpay.HPAYMENT_AMT), 0)
+        FROM RAH_HOME_PAYMENT hpay
+        JOIN RAH_HOME_INVOICE hi ON hpay.HINVOICE_ID = hi.HINVOICE_ID
+        JOIN RAH_HOME_POLICY hp ON hi.HPOLICY_ID = hp.HPOLICY_ID
+        WHERE hp.CUST_ID = c.CUST_ID
+    ) + (
+        SELECT COALESCE(SUM(apay.APAYMENT_AMT), 0)
+        FROM RAH_AUTO_PAYMENT apay
+        JOIN RAH_AUTO_INVOICE ai ON apay.AINVOICE_ID = ai.AINVOICE_ID
+        JOIN RAH_AUTO_POLICY ap ON ai.APOLICY_ID = ap.APOLICY_ID
+        WHERE ap.CUST_ID = c.CUST_ID
+    ) AS total_paid
+FROM RAH_CUSTOMER c;
+
+CREATE VIEW vw_customer_vehicles AS
+SELECT
+    v.VEHICLE_ID AS vehicle_ref,
+    v.VEHICLE_VIN,
+    v.VEHICLE_MAKE,
+    v.VEHICLE_MODEL,
+    v.VEHICLE_YEAR,
+    v.VEHICLE_STATUS,
+    v.APOLICY_ID AS policy_ref,
+    ap.APOLICY_STATUS AS status_code,
+    ap.CUST_ID AS customer_ref,
+    GROUP_CONCAT(CONCAT(d.DRIVER_FNAME, ' ', d.DRIVER_LNAME, ' (License: ', d.DRIVER_LICENSE_NO, ')') SEPARATOR '; ') AS drivers
+FROM RAH_VEHICLE v
+JOIN RAH_AUTO_POLICY ap ON v.APOLICY_ID = ap.APOLICY_ID
+LEFT JOIN RAH_DRIVER d ON v.VEHICLE_ID = d.VEHICLE_ID
+GROUP BY v.VEHICLE_ID, v.VEHICLE_VIN, v.VEHICLE_MAKE, v.VEHICLE_MODEL,
+         v.VEHICLE_YEAR, v.VEHICLE_STATUS, v.APOLICY_ID, ap.APOLICY_STATUS, ap.CUST_ID;
+
+CREATE VIEW vw_employee_vehicles AS
+SELECT
+    v.VEHICLE_ID AS vehicle_ref,
+    v.VEHICLE_VIN,
+    v.VEHICLE_MAKE,
+    v.VEHICLE_MODEL,
+    v.VEHICLE_YEAR,
+    v.VEHICLE_STATUS,
+    v.APOLICY_ID AS policy_ref,
+    ap.CUST_ID AS customer_ref,
+    c.FIRST_NAME,
+    c.LAST_NAME,
+    COUNT(d.DRIVER_ID) AS driver_count
+FROM RAH_VEHICLE v
+JOIN RAH_AUTO_POLICY ap ON v.APOLICY_ID = ap.APOLICY_ID
+JOIN RAH_CUSTOMER c ON ap.CUST_ID = c.CUST_ID AND ap.CUST_TYPE = c.CUST_TYPE
+LEFT JOIN RAH_DRIVER d ON v.VEHICLE_ID = d.VEHICLE_ID
+GROUP BY v.VEHICLE_ID, v.VEHICLE_VIN, v.VEHICLE_MAKE, v.VEHICLE_MODEL,
+         v.VEHICLE_YEAR, v.VEHICLE_STATUS, v.APOLICY_ID, ap.CUST_ID, c.FIRST_NAME, c.LAST_NAME;
+
+CREATE VIEW vw_employee_drivers AS
+SELECT
+    d.DRIVER_ID AS driver_ref,
+    d.DRIVER_LICENSE_NO,
+    d.DRIVER_FNAME,
+    d.DRIVER_LNAME,
+    d.DRIVER_AGE,
+    d.VEHICLE_ID AS vehicle_ref,
+    CONCAT(v.VEHICLE_YEAR, ' ', v.VEHICLE_MAKE, ' ', v.VEHICLE_MODEL) AS vehicle_label,
+    v.VEHICLE_VIN,
+    COUNT(*) AS row_marker
+FROM RAH_DRIVER d
+JOIN RAH_VEHICLE v ON d.VEHICLE_ID = v.VEHICLE_ID
+GROUP BY d.DRIVER_ID, d.DRIVER_LICENSE_NO, d.DRIVER_FNAME, d.DRIVER_LNAME,
+         d.DRIVER_AGE, d.VEHICLE_ID, v.VEHICLE_YEAR, v.VEHICLE_MAKE, v.VEHICLE_MODEL, v.VEHICLE_VIN;
+
+CREATE VIEW vw_audit_trail AS
+SELECT
+    AUDIT_ID AS audit_ref,
+    TABLE_NAME AS entity,
+    RECORD_ID AS ref,
+    ACTION AS action,
+    CHANGED_BY AS actor,
+    CHANGED_AT AS changed_at,
+    COUNT(*) AS row_marker
+FROM RAH_POLICY_AUDIT
+GROUP BY AUDIT_ID, TABLE_NAME, RECORD_ID, ACTION, CHANGED_BY, CHANGED_AT;
 
 -- ============================================================
 -- END OF SETUP
