@@ -150,6 +150,7 @@ MYSQL_USER = 'root'
 MYSQL_PASSWORD = ''          # e.g. 'yourpassword' on Windows/Linux
 MYSQL_DATABASE = 'nice_insurance'
 MYSQL_PORT = 3306
+MYSQL_POOL_SIZE = 20         # supports concurrent dashboard chart/count requests
 ```
 
 Or set it via environment variables (keeps secrets out of the repo):
@@ -157,6 +158,7 @@ Or set it via environment variables (keeps secrets out of the repo):
 **macOS / Linux (bash/zsh):**
 ```bash
 export MYSQL_PASSWORD='yourpassword'
+export MYSQL_POOL_SIZE=20
 ```
 
 **Windows (PowerShell):**

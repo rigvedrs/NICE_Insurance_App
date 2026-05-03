@@ -42,7 +42,7 @@ db_config = {
 try:
     connection_pool = pooling.MySQLConnectionPool(
         pool_name="nice_pool",
-        pool_size=5,
+        pool_size=app.config['MYSQL_POOL_SIZE'],
         pool_reset_session=True,
         **db_config
     )

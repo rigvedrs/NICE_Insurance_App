@@ -8,5 +8,6 @@ class Config:
     MYSQL_PASSWORD = os.environ.get('MYSQL_PASSWORD', '')
     MYSQL_DATABASE = 'nice_insurance'
     MYSQL_PORT = int(os.environ.get('MYSQL_PORT', 3306))
+    MYSQL_POOL_SIZE = int(os.environ.get('MYSQL_POOL_SIZE', 20))
     SESSION_PERMANENT = True
     PERMANENT_SESSION_LIFETIME = 1800  # 30 minutes session timeout
