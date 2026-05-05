@@ -1,0 +1,11 @@
+.git
+.gitignore
+.venv
+__pycache__
+*.py[cod]
+*.egg-info
+.env
+.dockerignore
+PROJECT_PROFESSOR_GUIDE.md
+RAH_GP2_Report.docx
+*.docx

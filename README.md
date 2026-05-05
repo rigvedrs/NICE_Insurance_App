@@ -185,6 +185,29 @@ The app starts at **http://localhost:8080**
 > - Windows PowerShell: `$env:PORT="5001"; python app.py`
 > - Windows cmd: `set PORT=5001 && python app.py`
 
+### 6. Run with Docker (Flask + MySQL)
+
+Requirements: **Docker Desktop** (or Docker Engine + Compose v2).
+
+```bash
+# Optional: customize root password / host ports (defaults match docker-compose.yml)
+cp .env.docker.example .env
+
+docker compose up --build
+```
+
+- **App:** http://localhost:8080 (override with `WEB_PUBLISH_PORT` in `.env`).
+- **MySQL on the host:** `localhost:${MYSQL_PUBLISH_PORT:-3307}` (mapped so it does not conflict with a local MySQL on 3306).
+
+On first startup, MySQL initializes from `setup_database.sql` mounted into `/docker-entrypoint-initdb.d/`. Sample users match the **Default Credentials** section below.
+
+To wipe the Docker database volume and re-seed:
+
+```bash
+docker compose down -v
+docker compose up --build
+```
+
 ## Default Credentials
 
 | Username    | Password      | Role     | Description              |
@@ -283,6 +306,8 @@ Flask (Python) ←→ MySQL 8.0
 nice_insurance_app/
 ├── app.py                  # Main Flask application (all routes)
 ├── config.py               # Database configuration
+├── Dockerfile              # Flask app image
+├── docker-compose.yml      # MySQL + web stack
 ├── requirements.txt        # Python dependencies
 ├── setup_database.sql      # Complete DDL + data + procedures + triggers
 ├── static/

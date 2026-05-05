@@ -1,0 +1,49 @@
+# NICE Insurance — full stack in Docker (Flask + MySQL 8), mirrors local defaults.
+#
+# First run initializes the DB from setup_database.sql (only on empty volume).
+#
+# Usage:
+#   cp .env.docker.example .env   # optional: edit MYSQL_ROOT_PASSWORD
+#   docker compose up --build
+# App: http://localhost:8080
+#
+# Reset DB (destroys Docker volume data):
+#   docker compose down -v && docker compose up --build
+
+services:
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-nice_insurance_root}
+      MYSQL_DATABASE: nice_insurance
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./setup_database.sql:/docker-entrypoint-initdb.d/01-setup_database.sql:ro
+    ports:
+      - "${MYSQL_PUBLISH_PORT:-3307}:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-nice_insurance_root}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  web:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${WEB_PUBLISH_PORT:-8080}:8080"
+    environment:
+      MYSQL_HOST: db
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-nice_insurance_root}
+      MYSQL_DATABASE: nice_insurance
+      MYSQL_PORT: "3306"
+      PORT: "8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  mysql_data:
